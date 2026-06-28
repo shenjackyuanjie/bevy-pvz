@@ -187,7 +187,8 @@ fn update_hud(
     runtime: Res<LevelRuntime>,
     definition: Res<LevelDefinition>,
     mut stats: Single<&mut Text, With<HudStatsText>>,
-    mut labels: Query<(&PlantCardLabel, &mut Text, &mut TextColor)>,
+    // 显式排除统计文字，向 Bevy 证明两组可变 Text 查询作用于互斥实体。
+    mut labels: Query<(&PlantCardLabel, &mut Text, &mut TextColor), Without<HudStatsText>>,
     mut panels: Query<(&PlantCardPanel, &mut BackgroundColor, &mut BorderColor)>,
 ) {
     stats.0 = format!(
