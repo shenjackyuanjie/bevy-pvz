@@ -14,12 +14,17 @@ use bevy::prelude::*;
 use bevy::sprite::Text2dShadow;
 use bevy_rapier2d::prelude::*;
 
+use crate::game::assets::GameAssets;
+use crate::game::catalog::{ColliderHalfSize, ContentCatalog};
 use crate::game::combat::{ApplyDamage, DamageKind, Health, Team};
 use crate::game::lawn::{Lane, LawnLayout};
 use crate::game::physics::zombie_groups;
 use crate::game::plant::Plant;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
+use crate::game::theme::UiTheme;
+
+pub use crate::game::catalog::ZombieKind;
 
 /// 僵尸插件，注册生成、状态更新、行走和攻击系统。
 pub struct ZombiePlugin;
@@ -52,6 +57,9 @@ impl Plugin for ZombiePlugin {
 pub struct Zombie {
     /// 行走速度（像素/秒）。
     pub speed: f32,
+    pub attack_damage: f32,
+    pub engage_min: f32,
+    pub engage_max: f32,
 }
 
 /// 僵尸行为状态枚举。
@@ -73,6 +81,8 @@ struct AttackTimer(Timer);
 /// 生成僵尸的请求消息。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SpawnZombie {
+    /// 要生成的僵尸种类。
+    pub kind: ZombieKind,
     /// 僵尸出生的行。
     pub lane: Lane,
 }
@@ -80,51 +90,73 @@ pub struct SpawnZombie {
 /// 处理 [`SpawnZombie`] 消息，在棋盘右侧生成基本僵尸实体。
 pub(crate) fn spawn_zombies(
     mut commands: Commands,
-    asset_server: Option<Res<AssetServer>>,
+    assets: Option<Res<GameAssets>>,
+    theme: Option<Res<UiTheme>>,
+    catalog: Res<ContentCatalog>,
     mut requests: MessageReader<SpawnZombie>,
     layout: Res<LawnLayout>,
 ) {
-    let label_font = asset_server
-        .as_ref()
-        .map(|assets| assets.load("fonts/NotoSansSC-VF.ttf"))
-        .unwrap_or_default();
-
     for request in requests.read() {
-        let position = Vec2::new(layout.right() + 75.0, layout.lane_y(request.lane));
+        let definition = catalog.zombie(request.kind);
+        let position = Vec2::new(
+            layout.right() + definition.spawn_offset_x,
+            layout.lane_y(request.lane),
+        );
+        let fallback_theme = UiTheme::default();
+        let label = theme
+            .as_ref()
+            .map(|theme| &theme.zombie_label)
+            .unwrap_or(&fallback_theme.zombie_label);
+        let font = assets
+            .as_ref()
+            .map(|assets| assets.chinese_font.clone())
+            .unwrap_or_default();
         // 名牌作为僵尸子实体，会自动跟随移动并在僵尸销毁时一并清理。
         commands.spawn((
             (
-                Sprite::from_color(Color::srgb(0.42, 0.48, 0.38), Vec2::new(58.0, 82.0)),
+                Sprite::from_color(definition.visual.color, definition.visual.size),
                 Transform::from_translation(position.extend(2.0)),
-                Zombie { speed: 17.0 },
+                Zombie {
+                    speed: definition.speed,
+                    attack_damage: definition.attack_damage,
+                    engage_min: *definition.engage_range.start(),
+                    engage_max: *definition.engage_range.end(),
+                },
+                request.kind,
                 ZombieState::Walking,
-                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                AttackTimer(Timer::new(definition.attack_interval, TimerMode::Repeating)),
                 request.lane,
-                Health::new(100.0),
+                Health::new(definition.health),
                 Team::Zombies,
+            ),
+            (
                 RigidBody::KinematicPositionBased,
-                Collider::cuboid(29.0, 41.0),
+                Collider::cuboid(
+                    definition.collider_half_size.x,
+                    definition.collider_half_size.y,
+                ),
+                ColliderHalfSize(definition.collider_half_size),
                 LockedAxes::ROTATION_LOCKED,
                 ActiveEvents::COLLISION_EVENTS,
                 zombie_groups(),
                 LevelEntity,
-                Name::new("普通僵尸"),
+                Name::new(definition.display_name),
             ),
             children![(
-                Text2d::new("僵尸"),
+                Text2d::new(definition.scene_label),
                 TextFont {
-                    font: label_font.clone(),
-                    font_size: 17.0,
+                    font,
+                    font_size: label.font_size,
                     ..default()
                 },
-                TextColor(Color::srgb(1.0, 0.96, 0.88)),
-                TextBackgroundColor(Color::srgba(0.11, 0.08, 0.05, 0.76)),
+                TextColor(label.text),
+                TextBackgroundColor(label.background),
                 TextLayout::new_with_justify(Justify::Center),
                 Text2dShadow {
-                    offset: Vec2::new(1.5, -1.5),
-                    color: Color::BLACK,
+                    offset: label.shadow_offset,
+                    color: label.shadow,
                 },
-                Transform::from_xyz(0.0, -4.0, 3.0),
+                Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
                 Name::new("僵尸名称"),
             )],
         ));
@@ -136,17 +168,17 @@ pub(crate) fn spawn_zombies(
 /// 判断逻辑：检查僵尸前方距离 [-12, 62] 像素范围内是否存在植物，
 /// 取最近的植物作为啃食目标；无植物则保持 Walking。
 fn update_zombie_state(
-    mut zombies: Query<(&Transform, &Lane, &mut ZombieState), With<Zombie>>,
+    mut zombies: Query<(&Zombie, &Transform, &Lane, &mut ZombieState)>,
     plants: Query<(Entity, &Transform, &Lane), With<Plant>>,
 ) {
-    for (zombie_transform, zombie_lane, mut state) in &mut zombies {
+    for (zombie, zombie_transform, zombie_lane, mut state) in &mut zombies {
         let zombie_x = zombie_transform.translation.x;
         let blocker = plants
             .iter()
             .filter(|(_, _, plant_lane)| *plant_lane == zombie_lane)
             .filter_map(|(entity, plant_transform, _)| {
                 let distance = zombie_x - plant_transform.translation.x;
-                (-12.0..=62.0)
+                (zombie.engage_min..=zombie.engage_max)
                     .contains(&distance)
                     .then_some((distance.abs(), entity))
             })
@@ -176,11 +208,11 @@ fn advance_walking_zombies(
 /// 如果目标植物已被销毁，则重置计时器并等待下次状态更新。
 fn tick_zombie_attacks(
     time: Res<Time<Fixed>>,
-    mut zombies: Query<(Entity, &ZombieState, &mut AttackTimer)>,
+    mut zombies: Query<(Entity, &Zombie, &ZombieState, &mut AttackTimer)>,
     plants: Query<(), With<Plant>>,
     mut damage: MessageWriter<ApplyDamage>,
 ) {
-    for (entity, state, mut timer) in &mut zombies {
+    for (entity, zombie, state, mut timer) in &mut zombies {
         let ZombieState::Eating { target } = *state else {
             timer.0.reset();
             continue;
@@ -193,7 +225,7 @@ fn tick_zombie_attacks(
             damage.write(ApplyDamage {
                 source: entity,
                 target,
-                amount: 20.0,
+                amount: zombie.attack_damage,
                 kind: DamageKind::Bite,
             });
         }

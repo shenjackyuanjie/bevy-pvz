@@ -16,6 +16,10 @@ bevy = { version = "0.18.1", default-features = false, features = [
 ] }
 bevy_rapier2d = { version = "0.34.0", default-features = false, features = ["dim2", "debug-render-2d"] }
 
+[features]
+default = ["debug_tools"]
+debug_tools = []
+
 [profile.dev]
 opt-level = 1
 

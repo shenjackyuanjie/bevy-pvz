@@ -13,7 +13,11 @@
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
+use crate::game::config::GameplaySettings;
+#[cfg(feature = "debug_tools")]
+use crate::game::controls::ControlBindings;
 use crate::game::lawn::LawnLayout;
+use crate::game::level::LevelSetupSet;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 
@@ -55,8 +59,12 @@ impl Plugin for GamePhysicsPlugin {
                     .before(GameSet::Combat),
             ),
         )
-        .add_systems(OnEnter(GameState::Playing), setup_physics_world)
-        .add_systems(Update, toggle_physics_debug);
+        .add_systems(
+            OnEnter(GameState::Playing),
+            setup_physics_world.after(LevelSetupSet::Reset),
+        );
+        #[cfg(feature = "debug_tools")]
+        app.add_systems(Update, toggle_physics_debug);
     }
 }
 
@@ -92,25 +100,42 @@ fn world_groups() -> CollisionGroups {
 /// 在 Playing 状态进入时创建物理世界边界实体。
 ///
 /// 包括一个棋盘下方的地板（让物理豌豆有空间弧形弹跳）和左右两侧的侧墙。
-fn setup_physics_world(mut commands: Commands, layout: Res<LawnLayout>) {
+fn setup_physics_world(
+    mut commands: Commands,
+    layout: Res<LawnLayout>,
+    settings: Res<GameplaySettings>,
+) {
     let board_width = layout.cell_size.x * f32::from(layout.columns);
     let center_x = layout.origin.x + board_width * 0.5;
 
     // 地板：棋盘下方的宽阔平台，让抛出的豌豆有空间划弧和弹跳。
     commands.spawn((
         RigidBody::Fixed,
-        Collider::cuboid(board_width * 0.75, 10.0),
+        Collider::cuboid(
+            board_width * settings.physics_floor_half_width_scale,
+            settings.physics_boundary_thickness,
+        ),
         world_groups(),
-        Transform::from_xyz(center_x, layout.origin.y - 55.0, 0.0),
+        Transform::from_xyz(
+            center_x,
+            layout.origin.y - settings.physics_floor_offset,
+            0.0,
+        ),
         LevelEntity,
         Name::new("Physics floor"),
     ));
 
     // 左右侧墙：将物理沙箱限定在边界内。生命周期清理作为最终防线。
-    for x in [layout.origin.x - 120.0, layout.right() + 220.0] {
+    for x in [
+        layout.origin.x - settings.physics_side_margins.x,
+        layout.right() + settings.physics_side_margins.y,
+    ] {
         commands.spawn((
             RigidBody::Fixed,
-            Collider::cuboid(10.0, 400.0),
+            Collider::cuboid(
+                settings.physics_boundary_thickness,
+                settings.physics_wall_half_height,
+            ),
             world_groups(),
             Transform::from_xyz(x, 0.0, 0.0),
             LevelEntity,
@@ -120,11 +145,13 @@ fn setup_physics_world(mut commands: Commands, layout: Res<LawnLayout>) {
 }
 
 /// 按 D 键切换物理碰撞体的调试渲染显示/隐藏。
+#[cfg(feature = "debug_tools")]
 fn toggle_physics_debug(
     keyboard: Res<ButtonInput<KeyCode>>,
+    controls: Res<ControlBindings>,
     mut debug: ResMut<DebugRenderContext>,
 ) {
-    if keyboard.just_pressed(KeyCode::KeyD) {
+    if keyboard.just_pressed(controls.toggle_physics) {
         debug.enabled = !debug.enabled;
     }
 }

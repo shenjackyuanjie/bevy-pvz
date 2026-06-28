@@ -15,18 +15,22 @@
 //! - `Combat`：弹丸命中解析，发出 [`ApplyDamage`](crate::game::combat::ApplyDamage)
 //! - `DeathAndCleanup`：弹丸超时或超出边界时销毁
 
-use std::collections::HashSet;
-use std::time::Duration;
-
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+use std::collections::HashSet;
 
+use crate::game::catalog::{ColliderHalfSize, ContentCatalog, ProjectileMotionDefinition};
 use crate::game::combat::{ApplyDamage, DamageKind, Team};
+use crate::game::config::GameplaySettings;
+#[cfg(feature = "debug_tools")]
+use crate::game::controls::ControlBindings;
 use crate::game::lawn::{Lane, LawnLayout};
 use crate::game::physics::physics_projectile_groups;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::zombie::Zombie;
+
+pub use crate::game::catalog::ProjectileKind;
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
 pub struct ProjectilePlugin;
@@ -65,46 +69,9 @@ impl Plugin for ProjectilePlugin {
                 tick_projectile_lifetimes
                     .in_set(GameSet::DeathAndCleanup)
                     .run_if(in_state(GameState::Playing)),
-            )
-            .add_systems(Update, projectile_sandbox_keys);
-    }
-}
-
-/// 弹丸种类枚举。
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub enum ProjectileKind {
-    /// 普通豌豆：路径运动、逻辑碰撞、命中即毁。
-    Pea,
-    /// 物理豌豆：物理运动、Rapier 碰撞、可弹跳穿透。
-    PhysicsPea,
-}
-
-/// 弹丸属性定义：伤害、生命周期、速度。
-#[derive(Debug, Clone, Copy)]
-pub struct ProjectileDefinition {
-    /// 命中时造成的伤害值。
-    pub damage: f32,
-    /// 弹丸最长存活时间（超时自动销毁）。
-    pub lifetime: Duration,
-    /// 弹丸水平移动速度（像素/秒）。
-    pub speed: f32,
-}
-
-impl ProjectileDefinition {
-    /// 根据弹丸种类返回对应的属性配置。
-    pub fn for_kind(kind: ProjectileKind) -> Self {
-        match kind {
-            ProjectileKind::Pea => Self {
-                damage: 20.0,
-                lifetime: Duration::from_secs(5),
-                speed: 430.0,
-            },
-            ProjectileKind::PhysicsPea => Self {
-                damage: 35.0,
-                lifetime: Duration::from_secs(8),
-                speed: 330.0,
-            },
-        }
+            );
+        #[cfg(feature = "debug_tools")]
+        app.add_systems(Update, projectile_sandbox_keys);
     }
 }
 
@@ -137,6 +104,10 @@ struct PathVelocity(Vec2);
 /// 内部组件：路径弹丸上一帧的位置，用于扫掠碰撞检测。
 #[derive(Component, Debug)]
 struct PreviousPosition(Vec2);
+
+/// 弹丸逻辑和物理碰撞共用的半径。
+#[derive(Component, Debug, Clone, Copy)]
+struct ProjectileRadius(f32);
 
 /// 命中策略组件，控制弹丸命中后的行为。
 #[derive(Component, Debug)]
@@ -176,18 +147,16 @@ pub struct ProjectileHit {
 /// 消费 [`SpawnProjectile`] 消息，创建对应的弹丸实体。
 ///
 /// 根据种类不同，普通豌豆附加路径运动组件，物理豌豆附加 Rapier 物理组件。
-fn spawn_projectiles(mut commands: Commands, mut requests: MessageReader<SpawnProjectile>) {
+fn spawn_projectiles(
+    mut commands: Commands,
+    catalog: Res<ContentCatalog>,
+    mut requests: MessageReader<SpawnProjectile>,
+) {
     for request in requests.read() {
-        let definition = ProjectileDefinition::for_kind(request.kind);
+        let definition = catalog.projectile(request.kind);
         // 共享基础组件：精灵、变换、Projectile 核心组件、行、命中注册表等
         let base = (
-            Sprite::from_color(
-                match request.kind {
-                    ProjectileKind::Pea => Color::srgb(0.28, 0.92, 0.22),
-                    ProjectileKind::PhysicsPea => Color::srgb(0.35, 0.85, 0.95),
-                },
-                Vec2::splat(18.0),
-            ),
+            Sprite::from_color(definition.visual.color, definition.visual.size),
             Transform::from_translation(request.origin.extend(3.0)),
             Projectile {
                 owner: request.owner,
@@ -196,39 +165,47 @@ fn spawn_projectiles(mut commands: Commands, mut requests: MessageReader<SpawnPr
                 lifetime: Timer::new(definition.lifetime, TimerMode::Once),
             },
             request.lane,
+            request.kind,
+            ProjectileRadius(definition.radius),
             HitRegistry::default(),
             LevelEntity,
             Name::new(format!("{:?}", request.kind)),
         );
 
-        match request.kind {
-            ProjectileKind::Pea => {
+        match definition.motion {
+            ProjectileMotionDefinition::Path { velocity } => {
                 commands.spawn((
                     base,
                     ProjectileMotion::Path,
-                    PathVelocity(Vec2::X * definition.speed),
+                    PathVelocity(velocity),
                     PreviousPosition(request.origin),
                     HitPolicy {
-                        destroy_on_hit: true,
-                        remaining_pierces: 0,
+                        destroy_on_hit: definition.hit_policy.destroy_on_hit,
+                        remaining_pierces: definition.hit_policy.max_pierces,
                     },
                 ));
             }
-            ProjectileKind::PhysicsPea => {
+            ProjectileMotionDefinition::Physics {
+                initial_velocity,
+                gravity_scale,
+                restitution,
+                friction,
+                ccd,
+            } => {
                 commands.spawn((
                     base,
                     ProjectileMotion::Physics,
                     HitPolicy {
-                        destroy_on_hit: false,
-                        remaining_pierces: u8::MAX,
+                        destroy_on_hit: definition.hit_policy.destroy_on_hit,
+                        remaining_pierces: definition.hit_policy.max_pierces,
                     },
                     RigidBody::Dynamic,
-                    Collider::ball(9.0),
-                    Velocity::linear(Vec2::new(definition.speed, 300.0)),
-                    Restitution::coefficient(0.72),
-                    Friction::coefficient(0.35),
-                    GravityScale(1.0),
-                    Ccd::enabled(),
+                    Collider::ball(definition.radius),
+                    Velocity::linear(initial_velocity),
+                    Restitution::coefficient(restitution),
+                    Friction::coefficient(friction),
+                    GravityScale(gravity_scale),
+                    Ccd { enabled: ccd },
                     ActiveEvents::COLLISION_EVENTS,
                     physics_projectile_groups(),
                 ));
@@ -258,6 +235,7 @@ type PathProjectileData<'a> = (
     &'a PreviousPosition,
     &'a Lane,
     &'a HitRegistry,
+    &'a ProjectileRadius,
 );
 
 /// 路径弹丸 Query 过滤条件。
@@ -267,19 +245,19 @@ type PathProjectileFilter = (With<Projectile>, With<PathVelocity>);
 /// 检测是否与同行的僵尸发生碰撞（使用 swept_circle_hit_t 算法），取最近的命中。
 fn query_path_projectile_hits(
     projectiles: Query<PathProjectileData<'_>, PathProjectileFilter>,
-    zombies: Query<(Entity, &Transform, &Lane), With<Zombie>>,
+    zombies: Query<(Entity, &Transform, &Lane, &ColliderHalfSize), With<Zombie>>,
     mut hits: MessageWriter<ProjectileHit>,
 ) {
-    for (projectile, transform, previous, projectile_lane, registry) in &projectiles {
+    for (projectile, transform, previous, projectile_lane, registry, radius) in &projectiles {
         let end = transform.translation.truncate();
         let mut nearest: Option<(f32, Entity)> = None;
 
-        for (zombie, zombie_transform, zombie_lane) in &zombies {
+        for (zombie, zombie_transform, zombie_lane, collider) in &zombies {
             if projectile_lane != zombie_lane || registry.0.contains(&zombie) {
                 continue;
             }
             let center = zombie_transform.translation.truncate();
-            if let Some(t) = swept_circle_hit_t(previous.0, end, center, Vec2::new(34.0, 42.0), 9.0)
+            if let Some(t) = swept_circle_hit_t(previous.0, end, center, collider.0, radius.0)
                 && nearest.is_none_or(|(best_t, _)| t < best_t)
             {
                 nearest = Some((t, zombie));
@@ -358,12 +336,23 @@ fn resolve_projectile_hits(
 fn tick_projectile_lifetimes(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
+    layout: Res<LawnLayout>,
+    settings: Res<GameplaySettings>,
     mut projectiles: Query<(Entity, &Transform, &mut Projectile)>,
 ) {
     for (entity, transform, mut projectile) in &mut projectiles {
         projectile.lifetime.tick(time.delta());
         let position = transform.translation;
-        if projectile.lifetime.is_finished() || position.x.abs() > 900.0 || position.y.abs() > 650.0
+        let min = layout.origin - settings.projectile_cleanup_margin;
+        let max = Vec2::new(
+            layout.right(),
+            layout.origin.y + layout.cell_size.y * f32::from(layout.rows),
+        ) + settings.projectile_cleanup_margin;
+        if projectile.lifetime.is_finished()
+            || position.x < min.x
+            || position.x > max.x
+            || position.y < min.y
+            || position.y > max.y
         {
             commands.entity(entity).despawn();
         }
@@ -371,8 +360,10 @@ fn tick_projectile_lifetimes(
 }
 
 /// 调试用：N 键发射普通豌豆，P 键发射物理豌豆（沙盒模式）。
+#[cfg(feature = "debug_tools")]
 fn projectile_sandbox_keys(
     keyboard: Res<ButtonInput<KeyCode>>,
+    controls: Res<ControlBindings>,
     layout: Res<LawnLayout>,
     state: Res<State<GameState>>,
     mut spawn: MessageWriter<SpawnProjectile>,
@@ -382,9 +373,9 @@ fn projectile_sandbox_keys(
     }
     let lane = Lane(2);
     let origin = Vec2::new(layout.origin.x + 30.0, layout.lane_y(lane));
-    let kind = if keyboard.just_pressed(KeyCode::KeyN) {
+    let kind = if keyboard.just_pressed(controls.spawn_path_projectile) {
         Some(ProjectileKind::Pea)
-    } else if keyboard.just_pressed(KeyCode::KeyP) {
+    } else if keyboard.just_pressed(controls.spawn_physics_projectile) {
         Some(ProjectileKind::PhysicsPea)
     } else {
         None
@@ -478,6 +469,7 @@ mod tests {
     fn spawn_request_builds_distinct_motion_pipelines() {
         let mut app = App::new();
         app.add_message::<SpawnProjectile>()
+            .init_resource::<ContentCatalog>()
             .add_systems(Update, spawn_projectiles);
         for kind in [ProjectileKind::Pea, ProjectileKind::PhysicsPea] {
             app.world_mut().write_message(SpawnProjectile {
@@ -491,14 +483,44 @@ mod tests {
         app.update();
 
         let world = app.world_mut();
-        let mut query =
-            world.query::<(&ProjectileMotion, Option<&RigidBody>, Option<&PathVelocity>)>();
+        let mut query = world.query::<(
+            &ProjectileKind,
+            &ProjectileMotion,
+            &ProjectileRadius,
+            Option<&RigidBody>,
+            Option<&PathVelocity>,
+            Option<&Collider>,
+        )>();
         let spawned: Vec<_> = query
             .iter(world)
-            .map(|(motion, body, path)| (*motion, body.copied(), path.is_some()))
+            .map(|(kind, motion, radius, body, path, collider)| {
+                (
+                    *kind,
+                    *motion,
+                    radius.0,
+                    body.copied(),
+                    path.is_some(),
+                    collider.is_some(),
+                )
+            })
             .collect();
         assert_eq!(spawned.len(), 2);
-        assert!(spawned.contains(&(ProjectileMotion::Path, None, true)));
-        assert!(spawned.contains(&(ProjectileMotion::Physics, Some(RigidBody::Dynamic), false)));
+        let catalog = ContentCatalog::default();
+        assert!(spawned.contains(&(
+            ProjectileKind::Pea,
+            ProjectileMotion::Path,
+            catalog.projectile(ProjectileKind::Pea).radius,
+            None,
+            true,
+            false,
+        )));
+        assert!(spawned.contains(&(
+            ProjectileKind::PhysicsPea,
+            ProjectileMotion::Physics,
+            catalog.projectile(ProjectileKind::PhysicsPea).radius,
+            Some(RigidBody::Dynamic),
+            false,
+            true,
+        )));
     }
 }

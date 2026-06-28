@@ -2,14 +2,15 @@
 //!
 //! 负责游戏中的中文 HUD、植物卡片、操作提示与胜负结果画面。
 
-use bevy::prelude::*;
+use bevy::{ecs::system::SystemParam, prelude::*};
 
+use crate::game::assets::GameAssets;
+use crate::game::catalog::ContentCatalog;
+use crate::game::controls::{ControlBindings, key_label, mouse_label};
 use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, SelectedPlant, SunBank};
 use crate::game::plant::PlantKind;
 use crate::game::state::{GameState, LevelEntity};
-
-/// 所有界面与场景名牌共用的中文字体，避免 Bevy 默认字体缺少中文字形。
-const UI_FONT: &str = "fonts/NotoSansSC-VF.ttf";
+use crate::game::theme::UiTheme;
 
 /// 游戏 UI 插件，注册 HUD 初始化/更新、结果画面显示与清理系统。
 pub struct GameUiPlugin;
@@ -41,9 +42,47 @@ struct PlantCardLabel(PlantKind);
 /// 标记胜负遮罩，离开结果状态时统一清理。
 struct ResultEntity;
 
+#[derive(SystemParam)]
+struct HudParams<'w, 's> {
+    bank: Res<'w, SunBank>,
+    selected: Res<'w, SelectedPlant>,
+    cards: Res<'w, PlantCards>,
+    runtime: Res<'w, LevelRuntime>,
+    definition: Res<'w, LevelDefinition>,
+    catalog: Res<'w, ContentCatalog>,
+    theme: Res<'w, UiTheme>,
+    stats: Single<'w, 's, &'static mut Text, With<HudStatsText>>,
+    labels: Query<
+        'w,
+        's,
+        (
+            &'static PlantCardLabel,
+            &'static mut Text,
+            &'static mut TextColor,
+        ),
+        Without<HudStatsText>,
+    >,
+    panels: Query<
+        'w,
+        's,
+        (
+            &'static PlantCardPanel,
+            &'static mut BackgroundColor,
+            &'static mut BorderColor,
+        ),
+    >,
+}
+
 /// 创建左侧状态/卡片区和右侧操作说明区。
-fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load(UI_FONT);
+fn setup_hud(
+    mut commands: Commands,
+    assets: Res<GameAssets>,
+    theme: Res<UiTheme>,
+    catalog: Res<ContentCatalog>,
+    definition: Res<LevelDefinition>,
+    controls: Res<ControlBindings>,
+) {
+    let font = assets.chinese_font.clone();
 
     commands
         .spawn((
@@ -64,8 +103,9 @@ fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                     position_type: PositionType::Absolute,
                     top: px(12),
                     left: px(16),
+                    right: px(320),
                     flex_direction: FlexDirection::Column,
-                    row_gap: px(8),
+                    row_gap: px(theme.panel_gap),
                     ..default()
                 },
                 Name::new("左侧状态区"),
@@ -73,14 +113,14 @@ fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             .with_children(|left| {
                 left.spawn((
                     Node {
-                        min_width: px(620),
+                        width: percent(100),
                         padding: UiRect::axes(px(16), px(9)),
                         border: UiRect::all(px(1)),
-                        border_radius: BorderRadius::all(px(10)),
+                        border_radius: BorderRadius::all(px(theme.panel_radius)),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.035, 0.09, 0.045, 0.91)),
-                    BorderColor::all(Color::srgba(0.68, 0.88, 0.43, 0.45)),
+                    BackgroundColor(theme.hud_panel_background),
+                    BorderColor::all(theme.hud_panel_border),
                     Name::new("关卡状态面板"),
                 ))
                 .with_children(|panel| {
@@ -88,10 +128,10 @@ fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                         Text::new("正在准备草坪……"),
                         TextFont {
                             font: font.clone(),
-                            font_size: 18.0,
+                            font_size: theme.hud_font_size,
                             ..default()
                         },
-                        TextColor(Color::srgb(0.96, 0.98, 0.88)),
+                        TextColor(theme.hud_text),
                         HudStatsText,
                     ));
                 });
@@ -99,46 +139,45 @@ fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                 left.spawn((
                     Node {
                         flex_direction: FlexDirection::Row,
-                        column_gap: px(8),
+                        flex_wrap: FlexWrap::Wrap,
+                        column_gap: px(theme.panel_gap),
                         ..default()
                     },
                     Name::new("植物卡片栏"),
                 ))
                 .with_children(|cards| {
-                    for (key, kind) in [
-                        (1, PlantKind::Sunflower),
-                        (2, PlantKind::Peashooter),
-                        (3, PlantKind::WallNut),
-                    ] {
+                    for card_definition in &definition.cards {
+                        let kind = card_definition.plant;
+                        let plant = catalog.plant(kind);
+                        let key = key_label(card_definition.key);
                         cards
                             .spawn((
                                 Node {
-                                    width: px(174),
-                                    min_height: px(68),
+                                    width: px(theme.card_size.x),
+                                    min_height: px(theme.card_size.y),
                                     padding: UiRect::axes(px(12), px(8)),
                                     border: UiRect::all(px(2)),
-                                    border_radius: BorderRadius::all(px(10)),
+                                    border_radius: BorderRadius::all(px(theme.panel_radius)),
                                     align_items: AlignItems::Center,
                                     ..default()
                                 },
-                                BackgroundColor(Color::srgba(0.08, 0.14, 0.07, 0.92)),
-                                BorderColor::all(Color::srgba(1.0, 1.0, 1.0, 0.16)),
+                                BackgroundColor(theme.card_background),
+                                BorderColor::all(theme.card_border),
                                 PlantCardPanel(kind),
-                                Name::new(format!("{}卡片", kind.display_name())),
+                                Name::new(format!("{}卡片", plant.display_name)),
                             ))
                             .with_children(|card| {
                                 card.spawn((
                                     Text::new(format!(
                                         "  [{key}] {}\n      {} 太阳  ·  可种植",
-                                        kind.display_name(),
-                                        kind.price()
+                                        plant.display_name, plant.price
                                     )),
                                     TextFont {
                                         font: font.clone(),
-                                        font_size: 15.0,
+                                        font_size: theme.card_font_size,
                                         ..default()
                                     },
-                                    TextColor(Color::srgb(0.88, 0.92, 0.80)),
+                                    TextColor(theme.card_text),
                                     PlantCardLabel(kind),
                                 ));
                             });
@@ -155,24 +194,22 @@ fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                     width: px(290),
                     padding: UiRect::axes(px(15), px(11)),
                     border: UiRect::all(px(1)),
-                    border_radius: BorderRadius::all(px(10)),
+                    border_radius: BorderRadius::all(px(theme.panel_radius)),
                     ..default()
                 },
-                BackgroundColor(Color::srgba(0.035, 0.055, 0.035, 0.88)),
-                BorderColor::all(Color::srgba(0.75, 0.88, 0.62, 0.28)),
+                BackgroundColor(theme.help_background),
+                BorderColor::all(theme.help_border),
                 Name::new("操作说明面板"),
             ))
             .with_children(|panel| {
                 panel.spawn((
-                    Text::new(
-                        "操作说明\n1 / 2 / 3  选择植物\n鼠标左键  放置植物 / 收集太阳\nN  普通豌豆    P  物理豌豆\nD  显示碰撞体  R  重新开始",
-                    ),
+                    Text::new(control_help(&definition, &controls)),
                     TextFont {
                         font: font.clone(),
-                        font_size: 15.0,
+                        font_size: theme.help_font_size,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.88, 0.94, 0.83)),
+                    TextColor(theme.help_text),
                     TextLayout::new_with_justify(Justify::Left),
                 ));
             });
@@ -180,108 +217,122 @@ fn setup_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 /// 刷新关卡统计和三张卡片的选中、余额及冷却视觉状态。
-fn update_hud(
-    bank: Res<SunBank>,
-    selected: Res<SelectedPlant>,
-    cards: Res<PlantCards>,
-    runtime: Res<LevelRuntime>,
-    definition: Res<LevelDefinition>,
-    mut stats: Single<&mut Text, With<HudStatsText>>,
-    // 显式排除统计文字，向 Bevy 证明两组可变 Text 查询作用于互斥实体。
-    mut labels: Query<(&PlantCardLabel, &mut Text, &mut TextColor), Without<HudStatsText>>,
-    mut panels: Query<(&PlantCardPanel, &mut BackgroundColor, &mut BorderColor)>,
-) {
-    stats.0 = format!(
+fn update_hud(mut params: HudParams) {
+    params.stats.0 = format!(
         "太阳  {}     波次  {} / {}     已消灭  {}     时间  {:.1} 秒",
-        bank.amount,
-        runtime.next_spawn,
-        definition.spawns.len(),
-        runtime.defeated_zombies,
-        runtime.elapsed.as_secs_f32(),
+        params.bank.amount,
+        params.runtime.next_spawn,
+        params.definition.spawns.len(),
+        params.runtime.defeated_zombies,
+        params.runtime.elapsed.as_secs_f32(),
     );
 
     // 卡片文字同时说明快捷键、价格和当前不可用原因。
-    for (label, mut text, mut color) in &mut labels {
+    for (label, mut text, mut color) in &mut params.labels {
         let kind = label.0;
-        let remaining = cards.remaining(kind).as_secs_f32();
+        let plant = params.catalog.plant(kind);
+        let card = params
+            .definition
+            .cards
+            .iter()
+            .find(|card| card.plant == kind)
+            .expect("validated card");
+        let remaining = params.cards.remaining(kind).as_secs_f32();
         let state = if remaining > 0.0 {
             format!("冷却 {remaining:.1} 秒")
-        } else if bank.amount < kind.price() {
+        } else if params.bank.amount < plant.price {
             "太阳不足".to_string()
         } else {
             "可种植".to_string()
         };
-        let marker = if selected.0 == kind { "▶" } else { " " };
+        let marker = if params.selected.0 == kind {
+            "▶"
+        } else {
+            " "
+        };
         text.0 = format!(
             "{marker} [{}] {}\n      {} 太阳  ·  {state}",
-            match kind {
-                PlantKind::Sunflower => 1,
-                PlantKind::Peashooter => 2,
-                PlantKind::WallNut => 3,
-            },
-            kind.display_name(),
-            kind.price(),
+            key_label(card.key),
+            plant.display_name,
+            plant.price,
         );
-        color.0 = if selected.0 == kind {
-            Color::srgb(1.0, 0.95, 0.64)
-        } else if remaining > 0.0 || bank.amount < kind.price() {
-            Color::srgb(0.60, 0.64, 0.56)
+        color.0 = if params.selected.0 == kind {
+            params.theme.card_selected_text
+        } else if remaining > 0.0 || params.bank.amount < plant.price {
+            params.theme.card_disabled_text
         } else {
-            Color::srgb(0.88, 0.92, 0.80)
+            params.theme.card_text
         };
     }
 
     // 金色边框表示当前选中；不可用卡片降低亮度但仍保留说明文字。
-    for (panel, mut background, mut border) in &mut panels {
+    for (panel, mut background, mut border) in &mut params.panels {
         let kind = panel.0;
-        let is_selected = selected.0 == kind;
-        let unavailable = !cards.ready(kind) || bank.amount < kind.price();
+        let plant = params.catalog.plant(kind);
+        let is_selected = params.selected.0 == kind;
+        let unavailable = !params.cards.ready(kind) || params.bank.amount < plant.price;
         background.0 = if is_selected {
-            Color::srgba(0.22, 0.30, 0.08, 0.96)
+            params.theme.card_selected_background
         } else if unavailable {
-            Color::srgba(0.075, 0.085, 0.065, 0.90)
+            params.theme.card_disabled_background
         } else {
-            Color::srgba(0.08, 0.14, 0.07, 0.92)
+            params.theme.card_background
         };
         *border = BorderColor::all(if is_selected {
-            Color::srgb(1.0, 0.78, 0.24)
+            params.theme.card_selected_border
         } else {
-            Color::srgba(1.0, 1.0, 1.0, 0.16)
+            params.theme.card_border
         });
     }
 }
 
 /// 显示中文胜利结果页。
-fn show_victory(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn show_victory(
+    mut commands: Commands,
+    assets: Res<GameAssets>,
+    controls: Res<ControlBindings>,
+    theme: Res<UiTheme>,
+) {
     show_result(
         &mut commands,
-        &asset_server,
+        &assets,
         "胜利",
-        "草坪守住了！按 R 再来一局",
-        Color::srgb(0.48, 0.96, 0.36),
+        &format!("草坪守住了！按 {} 再来一局", key_label(controls.restart)),
+        theme.victory_text,
+        &theme,
     );
 }
 
 /// 显示中文失败结果页。
-fn show_defeat(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn show_defeat(
+    mut commands: Commands,
+    assets: Res<GameAssets>,
+    controls: Res<ControlBindings>,
+    theme: Res<UiTheme>,
+) {
     show_result(
         &mut commands,
-        &asset_server,
+        &assets,
         "失败",
-        "僵尸突破了防线。按 R 重新开始",
-        Color::srgb(1.0, 0.38, 0.28),
+        &format!(
+            "僵尸突破了防线。按 {} 重新开始",
+            key_label(controls.restart)
+        ),
+        theme.defeat_text,
+        &theme,
     );
 }
 
 /// 构造覆盖整个窗口的结果遮罩，胜利和失败复用相同布局。
 fn show_result(
     commands: &mut Commands,
-    asset_server: &AssetServer,
+    assets: &GameAssets,
     title: &str,
     subtitle: &str,
     color: Color,
+    theme: &UiTheme,
 ) {
-    let font = asset_server.load(UI_FONT);
+    let font = assets.chinese_font.clone();
     commands.spawn((
         Node {
             width: percent(100),
@@ -292,7 +343,7 @@ fn show_result(
             row_gap: px(18),
             ..default()
         },
-        BackgroundColor(Color::srgba(0.02, 0.035, 0.02, 0.93)),
+        BackgroundColor(theme.result_background),
         ZIndex(100),
         ResultEntity,
         Name::new("游戏结果"),
@@ -301,7 +352,7 @@ fn show_result(
                 Text::new(title),
                 TextFont {
                     font: font.clone(),
-                    font_size: 76.0,
+                    font_size: theme.result_title_size,
                     ..default()
                 },
                 TextColor(color),
@@ -310,13 +361,40 @@ fn show_result(
                 Text::new(subtitle),
                 TextFont {
                     font,
-                    font_size: 24.0,
+                    font_size: theme.result_subtitle_size,
                     ..default()
                 },
-                TextColor(Color::srgb(0.94, 0.96, 0.90)),
+                TextColor(theme.result_subtitle),
             )
         ],
     ));
+}
+
+fn control_help(definition: &LevelDefinition, controls: &ControlBindings) -> String {
+    let card_keys = definition
+        .cards
+        .iter()
+        .map(|card| key_label(card.key))
+        .collect::<Vec<_>>()
+        .join(" / ");
+    let text = format!(
+        "操作说明\n{card_keys}  选择植物\n{}  放置植物 / 收集太阳\n{}  重新开始",
+        mouse_label(controls.place_or_collect),
+        key_label(controls.restart),
+    );
+    #[cfg(feature = "debug_tools")]
+    {
+        format!(
+            "{text}\n{}  普通豌豆    {}  物理豌豆\n{}  显示碰撞体",
+            key_label(controls.spawn_path_projectile),
+            key_label(controls.spawn_physics_projectile),
+            key_label(controls.toggle_physics),
+        )
+    }
+    #[cfg(not(feature = "debug_tools"))]
+    {
+        text
+    }
 }
 
 /// 离开结果状态时移除遮罩，确保重新开局不会残留旧界面。

@@ -8,7 +8,11 @@
 //! 调度顺序：
 //! `Spawn` → `LogicMovement` → `ContactRead` → `Combat` → `DeathAndCleanup` → `LevelOutcome`
 
+pub mod assets;
+pub mod catalog;
 pub mod combat;
+pub mod config;
+pub mod controls;
 pub mod lawn;
 pub mod level;
 pub mod physics;
@@ -16,10 +20,17 @@ pub mod plant;
 pub mod projectile;
 pub mod schedule;
 pub mod state;
+pub mod theme;
 pub mod ui;
 pub mod zombie;
 
 use bevy::prelude::*;
+
+use crate::game::assets::GameAssets;
+use crate::game::catalog::ContentCatalog;
+use crate::game::config::GameplaySettings;
+use crate::game::controls::ControlBindings;
+use crate::game::theme::UiTheme;
 
 use crate::game::combat::CombatPlugin;
 use crate::game::lawn::LawnPlugin;
@@ -41,6 +52,11 @@ pub struct GamePlugin;
 impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.init_state::<GameState>()
+            .init_resource::<ContentCatalog>()
+            .init_resource::<GameplaySettings>()
+            .init_resource::<ControlBindings>()
+            .init_resource::<UiTheme>()
+            .init_resource::<GameAssets>()
             .insert_resource(Time::<Fixed>::from_hz(60.0))
             .configure_sets(
                 FixedUpdate,
@@ -67,6 +83,7 @@ impl Plugin for GamePlugin {
             .add_systems(Startup, setup_camera)
             .add_systems(OnEnter(GameState::Loading), enter_playing)
             .add_systems(OnExit(GameState::Playing), cleanup_level)
+            .add_systems(Startup, validate_runtime_config)
             .add_systems(Update, restart_level);
     }
 }
@@ -91,10 +108,18 @@ fn cleanup_level(mut commands: Commands, level_entities: Query<Entity, With<Leve
 /// 按 R 键重新开始关卡（Loading 状态下忽略，防止重复触发）。
 fn restart_level(
     keyboard: Res<ButtonInput<KeyCode>>,
+    controls: Res<ControlBindings>,
     state: Res<State<GameState>>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    if keyboard.just_pressed(KeyCode::KeyR) && *state.get() != GameState::Loading {
+    if keyboard.just_pressed(controls.restart) && *state.get() != GameState::Loading {
         next_state.set(GameState::Loading);
     }
+}
+
+fn validate_runtime_config(catalog: Res<ContentCatalog>, settings: Res<GameplaySettings>) {
+    catalog
+        .validate()
+        .expect("invalid built-in content catalog");
+    settings.validate().expect("invalid gameplay settings");
 }

@@ -12,6 +12,7 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 
+use crate::game::level::LevelSetupSet;
 use crate::game::state::{GameState, LevelEntity};
 
 /// 草坪行数：5 行。
@@ -28,7 +29,10 @@ impl Plugin for LawnPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<LawnLayout>()
             .init_resource::<CellOccupancy>()
-            .add_systems(OnEnter(GameState::Playing), draw_lawn_placeholders);
+            .add_systems(
+                OnEnter(GameState::Playing),
+                draw_lawn_placeholders.after(LevelSetupSet::Reset),
+            );
     }
 }
 
