@@ -1,15 +1,27 @@
+//! 关卡系统
+//!
+//! 管理单关的完整生命周期，包括：
+//!
+//! - **波次生成**：按时间线自动生成僵尸（[`tick_wave_timeline`]）
+//! - **太阳经济**：太阳存款（[`SunBank`]）与植物卡片冷却（[`PlantCards`]）
+//! - **植物选择**：按数字键 1/2/3 切换当前选中的植物（[`SelectedPlant`]）
+//! - **鼠标交互**：左键点击收集太阳、在棋盘上放置植物（[`handle_world_clicks`]）
+//! - **胜负判定**：僵尸突破房子左侧 → 失败；清空所有僵尸 → 胜利
+//! - **太阳动画**：太阳拾取物上下浮动并旋转
+
 use std::collections::HashMap;
 use std::time::Duration;
 
 use bevy::{ecs::system::SystemParam, prelude::*};
 
-use super::combat::{EntityDied, Team};
-use super::lawn::{CellOccupancy, Lane, LawnLayout};
-use super::plant::{PlantKind, PlantRequest};
-use super::schedule::GameSet;
-use super::state::{GameState, LevelEntity};
-use super::zombie::{SpawnZombie, Zombie};
+use crate::game::combat::{EntityDied, Team};
+use crate::game::lawn::{CellOccupancy, Lane, LawnLayout};
+use crate::game::plant::{PlantKind, PlantRequest};
+use crate::game::schedule::GameSet;
+use crate::game::state::{GameState, LevelEntity};
+use crate::game::zombie::{SpawnZombie, Zombie};
 
+/// 关卡插件，注册资源、消息和所有关卡管理相关的系统。
 pub struct LevelPlugin;
 
 impl Plugin for LevelPlugin {
@@ -26,7 +38,7 @@ impl Plugin for LevelPlugin {
             .add_systems(
                 FixedUpdate,
                 (
-                    tick_wave_timeline.before(super::zombie::spawn_zombies),
+                    tick_wave_timeline.before(crate::game::zombie::spawn_zombies),
                     spawn_sun_pickups,
                 )
                     .in_set(GameSet::Spawn)
@@ -59,79 +71,58 @@ impl Plugin for LevelPlugin {
     }
 }
 
+/// 僵尸生成点定义：指定在什么时间、哪一行生成一个僵尸。
 #[derive(Debug, Clone, Copy)]
 pub struct ZombieSpawn {
+    /// 相对于关卡开始的生成时间（秒）。
     pub at_seconds: f32,
+    /// 僵尸出生的行。
     pub lane: Lane,
 }
 
+/// 关卡配置资源，定义所有僵尸波次。
 #[derive(Resource, Debug, Clone)]
 pub struct LevelDefinition {
+    /// 按时间排序的僵尸生成队列。
     pub spawns: Vec<ZombieSpawn>,
 }
 
 impl Default for LevelDefinition {
     fn default() -> Self {
         Self {
+            // 默认 11 个僵尸的关卡配置，分布在 5 行、约 53 秒内
             spawns: vec![
-                ZombieSpawn {
-                    at_seconds: 4.0,
-                    lane: Lane(2),
-                },
-                ZombieSpawn {
-                    at_seconds: 10.0,
-                    lane: Lane(0),
-                },
-                ZombieSpawn {
-                    at_seconds: 14.0,
-                    lane: Lane(4),
-                },
-                ZombieSpawn {
-                    at_seconds: 20.0,
-                    lane: Lane(1),
-                },
-                ZombieSpawn {
-                    at_seconds: 24.0,
-                    lane: Lane(3),
-                },
-                ZombieSpawn {
-                    at_seconds: 31.0,
-                    lane: Lane(2),
-                },
-                ZombieSpawn {
-                    at_seconds: 36.0,
-                    lane: Lane(0),
-                },
-                ZombieSpawn {
-                    at_seconds: 38.0,
-                    lane: Lane(4),
-                },
-                ZombieSpawn {
-                    at_seconds: 46.0,
-                    lane: Lane(1),
-                },
-                ZombieSpawn {
-                    at_seconds: 47.5,
-                    lane: Lane(3),
-                },
-                ZombieSpawn {
-                    at_seconds: 53.0,
-                    lane: Lane(2),
-                },
+                ZombieSpawn { at_seconds: 4.0, lane: Lane(2) },
+                ZombieSpawn { at_seconds: 10.0, lane: Lane(0) },
+                ZombieSpawn { at_seconds: 14.0, lane: Lane(4) },
+                ZombieSpawn { at_seconds: 20.0, lane: Lane(1) },
+                ZombieSpawn { at_seconds: 24.0, lane: Lane(3) },
+                ZombieSpawn { at_seconds: 31.0, lane: Lane(2) },
+                ZombieSpawn { at_seconds: 36.0, lane: Lane(0) },
+                ZombieSpawn { at_seconds: 38.0, lane: Lane(4) },
+                ZombieSpawn { at_seconds: 46.0, lane: Lane(1) },
+                ZombieSpawn { at_seconds: 47.5, lane: Lane(3) },
+                ZombieSpawn { at_seconds: 53.0, lane: Lane(2) },
             ],
         }
     }
 }
 
+/// 关卡运行时数据资源，追踪游戏进行中的状态。
 #[derive(Resource, Debug, Default)]
 pub struct LevelRuntime {
+    /// 关卡已流逝的时间。
     pub elapsed: Duration,
+    /// 下一个要生成的波次索引（= 已生成的波次数）。
     pub next_spawn: usize,
+    /// 已消灭的僵尸总数。
     pub defeated_zombies: usize,
 }
 
+/// 太阳银行资源，存储玩家当前拥有的太阳数量。
 #[derive(Resource, Debug)]
 pub struct SunBank {
+    /// 太阳数量。
     pub amount: u32,
 }
 
@@ -142,6 +133,7 @@ impl Default for SunBank {
 }
 
 impl SunBank {
+    /// 尝试花费太阳：如果余额充足则扣除并返回 `true`，否则返回 `false`。
     pub fn try_spend(&mut self, amount: u32) -> bool {
         if self.amount < amount {
             return false;
@@ -151,6 +143,7 @@ impl SunBank {
     }
 }
 
+/// 植物卡片冷却资源，记录每种植物距离下次可用的剩余时间。
 #[derive(Resource, Debug)]
 pub struct PlantCards(pub HashMap<PlantKind, Duration>);
 
@@ -166,19 +159,23 @@ impl Default for PlantCards {
 }
 
 impl PlantCards {
+    /// 检查某植物卡片是否已冷却完毕（可用）。
     pub fn ready(&self, kind: PlantKind) -> bool {
         self.0.get(&kind).is_some_and(Duration::is_zero)
     }
 
+    /// 触发冷却：使用后将冷却时间设为该植物的 `card_cooldown`。
     pub fn trigger(&mut self, kind: PlantKind) {
         self.0.insert(kind, kind.card_cooldown());
     }
 
+    /// 查询某植物的剩余冷却时间。
     pub fn remaining(&self, kind: PlantKind) -> Duration {
         self.0.get(&kind).copied().unwrap_or(Duration::ZERO)
     }
 }
 
+/// 当前选中的植物资源，由数字键 1/2/3 切换。
 #[derive(Resource, Debug)]
 pub struct SelectedPlant(pub PlantKind);
 
@@ -188,25 +185,35 @@ impl Default for SelectedPlant {
     }
 }
 
+/// 太阳拾取物组件，标记掉落的太阳实体。
 #[derive(Component, Debug)]
 pub struct SunPickup {
+    /// 拾取后增加的太阳数量。
     pub value: u32,
+    /// 初始 Y 坐标（用于浮动动画基准）。
     base_y: f32,
+    /// 已存在时间（秒，用于驱动浮动和旋转动画）。
     age: f32,
 }
 
+/// 生成太阳的请求消息，由向日葵系统发出。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SpawnSun {
+    /// 太阳生成的位置。
     pub position: Vec2,
+    /// 太阳的价值。
     pub value: u32,
 }
 
+/// 关卡胜利消息（目前未消费，保留以备扩展）。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct LevelWon;
 
+/// 关卡失败消息（目前未消费，保留以备扩展）。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct LevelLost;
 
+/// 进入 Playing 状态时重置所有关卡运行时数据。
 fn reset_level_runtime(
     mut runtime: ResMut<LevelRuntime>,
     mut bank: ResMut<SunBank>,
@@ -219,6 +226,7 @@ fn reset_level_runtime(
     occupancy.0.clear();
 }
 
+/// 波次时间线驱动：每帧累加已用时间，当达到某个生成点时发出 [`SpawnZombie`] 消息。
 fn tick_wave_timeline(
     time: Res<Time<Fixed>>,
     definition: Res<LevelDefinition>,
@@ -234,12 +242,14 @@ fn tick_wave_timeline(
     }
 }
 
+/// 每帧减少所有植物卡片的冷却时间。
 fn tick_card_cooldowns(time: Res<Time<Fixed>>, mut cards: ResMut<PlantCards>) {
     for remaining in cards.0.values_mut() {
         *remaining = remaining.saturating_sub(time.delta());
     }
 }
 
+/// 消费 [`SpawnSun`] 消息，生成太阳拾取物实体。
 fn spawn_sun_pickups(mut commands: Commands, mut requests: MessageReader<SpawnSun>) {
     for request in requests.read() {
         commands.spawn((
@@ -256,6 +266,7 @@ fn spawn_sun_pickups(mut commands: Commands, mut requests: MessageReader<SpawnSu
     }
 }
 
+/// 数字键 1/2/3 切换当前选中的植物种类。
 fn select_plant_card(keyboard: Res<ButtonInput<KeyCode>>, mut selected: ResMut<SelectedPlant>) {
     if keyboard.just_pressed(KeyCode::Digit1) {
         selected.0 = PlantKind::Sunflower;
@@ -266,6 +277,7 @@ fn select_plant_card(keyboard: Res<ButtonInput<KeyCode>>, mut selected: ResMut<S
     }
 }
 
+/// 自定义 SystemParam，封装鼠标点击所需的全部系统参数。
 #[derive(SystemParam)]
 struct WorldClickParams<'w, 's> {
     commands: Commands<'w, 's>,
@@ -279,6 +291,12 @@ struct WorldClickParams<'w, 's> {
     plant: MessageWriter<'w, PlantRequest>,
 }
 
+/// 处理鼠标左键点击。
+///
+/// 逻辑顺序：
+/// 1. 将屏幕坐标转换为世界坐标
+/// 2. 先检测是否点到了太阳拾取物（28 像素范围内），是则收集并销毁
+/// 3. 否则检测是否点到了棋盘格子，是则发出 [`PlantRequest`] 放置当前选中的植物
 fn handle_world_clicks(mut params: WorldClickParams) {
     if !params.mouse.just_pressed(MouseButton::Left) {
         return;
@@ -291,6 +309,7 @@ fn handle_world_clicks(mut params: WorldClickParams) {
         return;
     };
 
+    // 先检测太阳拾取物点击
     if let Some((entity, _, pickup)) = params
         .pickups
         .iter()
@@ -301,6 +320,7 @@ fn handle_world_clicks(mut params: WorldClickParams) {
         return;
     }
 
+    // 再检测棋盘格子点击
     if let Some(cell) = params.layout.world_to_cell(world) {
         params.plant.write(PlantRequest {
             kind: params.selected.0,
@@ -309,6 +329,7 @@ fn handle_world_clicks(mut params: WorldClickParams) {
     }
 }
 
+/// 太阳拾取物动画：上下浮动（正弦波）并缓慢旋转。
 fn animate_sun_pickups(time: Res<Time>, mut pickups: Query<(&mut Transform, &mut SunPickup)>) {
     for (mut transform, mut pickup) in &mut pickups {
         pickup.age += time.delta_secs();
@@ -317,6 +338,7 @@ fn animate_sun_pickups(time: Res<Time>, mut pickups: Query<(&mut Transform, &mut
     }
 }
 
+/// 失败判定：如果有僵尸的 X 坐标 ≤ 棋盘原点左 16 像素，则进入 Defeat 状态。
 fn check_defeat(
     zombies: Query<&Transform, With<Zombie>>,
     layout: Res<LawnLayout>,
@@ -332,6 +354,7 @@ fn check_defeat(
     }
 }
 
+/// 胜利判定：所有波次已生成完毕且场上无存活僵尸，则进入 Victory 状态。
 fn check_victory(
     definition: Res<LevelDefinition>,
     runtime: Res<LevelRuntime>,
@@ -345,6 +368,7 @@ fn check_victory(
     }
 }
 
+/// 统计已消灭的僵尸数量，并输出调试日志。
 fn count_defeated_zombies(
     mut deaths: MessageReader<EntityDied>,
     mut runtime: ResMut<LevelRuntime>,

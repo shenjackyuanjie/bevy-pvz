@@ -1,17 +1,28 @@
+//! 植物系统
+//!
+//! 定义植物种类（向日葵、豌豆射手、坚果墙）及其属性（价格、冷却、生命值、颜色），
+//! 处理植物放置逻辑（资源消耗、冷却触发、格子占用）、豌豆射手自动射击以及向日葵产太阳。
+//!
+//! 调度阶段：
+//! - `Spawn`：读取 [`PlantRequest`] 消息，验证条件后生成植物实体
+//! - `LogicMovement`：豌豆射手检测前方僵尸并发射豌豆、向日葵定时产出太阳
+//! - `DeathAndCleanup`：死亡植物释放占用的格子
+
 use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
-use super::combat::{Dead, Health, Team};
-use super::lawn::{CellOccupancy, GridCell, Lane, LawnLayout};
-use super::level::{PlantCards, SpawnSun, SunBank};
-use super::physics::plant_groups;
-use super::projectile::{ProjectileKind, SpawnProjectile};
-use super::schedule::GameSet;
-use super::state::GameState;
-use super::zombie::Zombie;
+use crate::game::combat::{Dead, Health, Team};
+use crate::game::lawn::{CellOccupancy, GridCell, Lane, LawnLayout};
+use crate::game::level::{PlantCards, SpawnSun, SunBank};
+use crate::game::physics::plant_groups;
+use crate::game::projectile::{ProjectileKind, SpawnProjectile};
+use crate::game::schedule::GameSet;
+use crate::game::state::GameState;
+use crate::game::zombie::Zombie;
 
+/// 植物插件，注册生成、行为逻辑（射击/产太阳）和死亡释放格子的系统。
 pub struct PlantPlugin;
 
 impl Plugin for PlantPlugin {
@@ -33,22 +44,30 @@ impl Plugin for PlantPlugin {
                 FixedUpdate,
                 release_dead_plant_cells
                     .in_set(GameSet::DeathAndCleanup)
-                    .before(super::combat::cleanup_dead_entities)
+                    .before(crate::game::combat::cleanup_dead_entities)
                     .run_if(in_state(GameState::Playing)),
             );
     }
 }
 
+/// 植物种类枚举。
+///
+/// 每种植物有对应的显示名称、价格（太阳）、冷却时间、生命值和颜色。
 #[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum PlantKind {
+    /// 向日葵：产太阳，生命值低，价格 50 太阳。
     Sunflower,
+    /// 豌豆射手：发射豌豆攻击前方僵尸，价格 100 太阳。
     Peashooter,
+    /// 坚果墙：高生命值阻挡僵尸，价格 50 太阳。
     WallNut,
 }
 
 impl PlantKind {
+    /// 所有植物种类的列表，用于遍历注册。
     pub const ALL: [Self; 3] = [Self::Sunflower, Self::Peashooter, Self::WallNut];
 
+    /// 返回植物的显示名称（英文，与原版 PvZ 一致）。
     pub fn display_name(self) -> &'static str {
         match self {
             Self::Sunflower => "Sunflower",
@@ -57,6 +76,7 @@ impl PlantKind {
         }
     }
 
+    /// 植物的太阳价格。
     pub fn price(self) -> u32 {
         match self {
             Self::Sunflower | Self::WallNut => 50,
@@ -64,6 +84,7 @@ impl PlantKind {
         }
     }
 
+    /// 使用后卡片冷却时间。
     pub fn card_cooldown(self) -> Duration {
         match self {
             Self::Sunflower => Duration::from_secs(5),
@@ -72,6 +93,7 @@ impl PlantKind {
         }
     }
 
+    /// 植物的初始生命值。
     fn health(self) -> f32 {
         match self {
             Self::Sunflower => 100.0,
@@ -80,6 +102,7 @@ impl PlantKind {
         }
     }
 
+    /// 植物的精灵颜色。
     fn color(self) -> Color {
         match self {
             Self::Sunflower => Color::srgb(0.98, 0.72, 0.12),
@@ -89,18 +112,34 @@ impl PlantKind {
     }
 }
 
+/// 植物标记组件，用于查询区分植物与其他实体。
 #[derive(Component, Debug)]
 pub struct Plant;
 
+/// 内部组件：动作计时器，用于驱动周期性行为（射击间隔、产太阳间隔）。
 #[derive(Component, Debug)]
 struct ActionTimer(Timer);
 
+/// 放置植物的请求消息。
+///
+/// 由鼠标点击处理系统（`handle_world_clicks`）发送，
+/// [`place_plants`] 系统消费并执行实际放置。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct PlantRequest {
+    /// 要放置的植物种类。
     pub kind: PlantKind,
+    /// 目标格子位置。
     pub cell: GridCell,
 }
 
+/// 处理 [`PlantRequest`] 消息，在满足条件时生成植物实体。
+///
+/// 验证条件（按顺序）：
+/// 1. 格子未被占用且在棋盘范围内
+/// 2. 该植物卡片冷却已结束（ready）
+/// 3. 太阳库存充足
+///
+/// 条件通过后：扣除太阳、触发卡片冷却、生成精灵/碰撞体/标记组件、更新格子占用表。
 fn place_plants(
     mut commands: Commands,
     mut requests: MessageReader<PlantRequest>,
@@ -131,10 +170,11 @@ fn place_plants(
             RigidBody::Fixed,
             Collider::cuboid(29.0, 34.0),
             plant_groups(),
-            super::state::LevelEntity,
+            crate::game::state::LevelEntity,
             Name::new(request.kind.display_name()),
         ));
 
+        // 坚果墙没有周期性动作，不加 ActionTimer。
         if request.kind != PlantKind::WallNut {
             let seconds = match request.kind {
                 PlantKind::Sunflower => 7.0,
@@ -160,6 +200,9 @@ fn place_plants(
     }
 }
 
+/// 豌豆射手行为：检测前方同行的僵尸，发射豌豆。
+///
+/// 只有当射手的 `ActionTimer` 归零（射击间隔结束）且前方存在僵尸时才会发射。
 fn fire_ready_shooters(
     time: Res<Time<Fixed>>,
     mut shooters: Query<(Entity, &Transform, &Lane, &mut ActionTimer), With<Peashooter>>,
@@ -182,6 +225,9 @@ fn fire_ready_shooters(
     }
 }
 
+/// 向日葵行为：定时产出太阳。
+///
+/// 每隔 7 秒在向日葵上方产生一个太阳拾取物。
 fn produce_sun(
     time: Res<Time<Fixed>>,
     mut sunflowers: Query<(&Transform, &mut ActionTimer), With<Sunflower>>,
@@ -198,6 +244,9 @@ fn produce_sun(
     }
 }
 
+/// 释放已死亡植物占用的格子，使该位置可以重新放置植物。
+///
+/// 在死亡实体清理之前运行，确保格子先释放再清理实体。
 fn release_dead_plant_cells(
     dead_plants: Query<&GridCell, (With<Plant>, With<Dead>)>,
     mut occupancy: ResMut<CellOccupancy>,
@@ -207,8 +256,10 @@ fn release_dead_plant_cells(
     }
 }
 
-// Marker components make behavior queries explicit and cheap.
+// 标记组件让行为查询变得明确且高效。
+/// 向日葵标记组件，用于 Query 过滤。
 #[derive(Component)]
 struct Sunflower;
+/// 豌豆射手标记组件，用于 Query 过滤。
 #[derive(Component)]
 struct Peashooter;

@@ -1,9 +1,17 @@
+//! 游戏 UI 系统
+//!
+//! 负责游戏中的用户界面元素：
+//! - **HUD**：左上角显示太阳数量、波次进度、击杀数、时间以及三张植物卡片状态
+//! - **操作提示**：右上角显示快捷键说明
+//! - **结果画面**：胜利/失败时显示全屏遮罩和结果文字
+
 use bevy::prelude::*;
 
-use super::level::{LevelDefinition, LevelRuntime, PlantCards, SelectedPlant, SunBank};
-use super::plant::PlantKind;
-use super::state::{GameState, LevelEntity};
+use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, SelectedPlant, SunBank};
+use crate::game::plant::PlantKind;
+use crate::game::state::{GameState, LevelEntity};
 
+/// 游戏 UI 插件，注册 HUD 初始化/更新、结果画面显示与清理系统。
 pub struct GameUiPlugin;
 
 impl Plugin for GameUiPlugin {
@@ -17,13 +25,17 @@ impl Plugin for GameUiPlugin {
     }
 }
 
+/// 内部标记组件，标识 HUD 文字实体（方便单例查询更新）。
 #[derive(Component)]
 struct HudText;
 
+/// 内部标记组件，标识结果画面实体（方便退出时清理）。
 #[derive(Component)]
 struct ResultEntity;
 
+/// 初始化 HUD：创建左上角的游戏状态文字和右上角的操作提示。
 fn setup_hud(mut commands: Commands) {
+    // 左上角主 HUD 文字（太阳、波次、时间、卡片状态）
     commands.spawn((
         Text::new("Loading HUD..."),
         TextFont {
@@ -42,6 +54,7 @@ fn setup_hud(mut commands: Commands) {
         Name::new("Game HUD"),
     ));
 
+    // 右上角操作提示
     commands.spawn((
         Text::new(
             "1/2/3 select plant | Left click plant/collect sun\n\
@@ -63,6 +76,10 @@ fn setup_hud(mut commands: Commands) {
     ));
 }
 
+/// 每帧更新 HUD 文字内容，反映当前游戏状态。
+///
+/// 显示：太阳库存、当前波次/总波次、已消灭僵尸数、游戏用时，
+/// 以及三张植物卡片的选中标记、名称、价格和冷却状态。
 fn update_hud(
     bank: Res<SunBank>,
     selected: Res<SelectedPlant>,
@@ -71,6 +88,7 @@ fn update_hud(
     definition: Res<LevelDefinition>,
     mut text: Single<&mut Text, With<HudText>>,
 ) {
+    // 生成单张植物卡片的显示文字。
     let card = |number: usize, kind: PlantKind| {
         let remaining = cards.remaining(kind).as_secs_f32();
         let state = if remaining <= 0.0 {
@@ -99,14 +117,19 @@ fn update_hud(
     );
 }
 
+/// 显示胜利画面（绿色大字 VICTORY + 按 R 重新开始的提示）。
 fn show_victory(mut commands: Commands) {
     show_result(&mut commands, "VICTORY", Color::srgb(0.35, 0.95, 0.35));
 }
 
+/// 显示失败画面（红色大字 DEFEAT + 按 R 重新开始的提示）。
 fn show_defeat(mut commands: Commands) {
     show_result(&mut commands, "DEFEAT", Color::srgb(1.0, 0.3, 0.25));
 }
 
+/// 内部函数：创建全屏遮罩结果画面。
+///
+/// 包含一个半透明黑色背景、大号结果文字和重新开始的提示文字。
 fn show_result(commands: &mut Commands, label: &str, color: Color) {
     commands.spawn((
         Node {
@@ -141,6 +164,7 @@ fn show_result(commands: &mut Commands, label: &str, color: Color) {
     ));
 }
 
+/// 退出结果画面时清理结果实体。
 fn cleanup_result(mut commands: Commands, results: Query<Entity, With<ResultEntity>>) {
     for entity in &results {
         commands.entity(entity).despawn();

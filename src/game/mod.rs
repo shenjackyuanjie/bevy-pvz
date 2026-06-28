@@ -1,3 +1,13 @@
+//! 游戏根模块
+//!
+//! 本模块是游戏逻辑的入口，负责：
+//! - 公开所有子模块（战斗、草坪、关卡、物理、植物、弹丸、调度、状态、UI、僵尸）
+//! - 组合所有子插件为统一的 [`GamePlugin`]
+//! - 配置固定时间步长更新（60 Hz）下各 [`GameSet`] 阶段的连锁执行顺序
+//!
+//! 调度顺序：
+//! `Spawn` → `LogicMovement` → `ContactRead` → `Combat` → `DeathAndCleanup` → `LevelOutcome`
+
 pub mod combat;
 pub mod lawn;
 pub mod level;
@@ -11,17 +21,21 @@ pub mod zombie;
 
 use bevy::prelude::*;
 
-use self::combat::CombatPlugin;
-use self::lawn::LawnPlugin;
-use self::level::LevelPlugin;
-use self::physics::GamePhysicsPlugin;
-use self::plant::PlantPlugin;
-use self::projectile::ProjectilePlugin;
-use self::schedule::GameSet;
-use self::state::{GameState, LevelEntity};
-use self::ui::GameUiPlugin;
-use self::zombie::ZombiePlugin;
+use crate::game::combat::CombatPlugin;
+use crate::game::lawn::LawnPlugin;
+use crate::game::level::LevelPlugin;
+use crate::game::physics::GamePhysicsPlugin;
+use crate::game::plant::PlantPlugin;
+use crate::game::projectile::ProjectilePlugin;
+use crate::game::schedule::GameSet;
+use crate::game::state::{GameState, LevelEntity};
+use crate::game::ui::GameUiPlugin;
+use crate::game::zombie::ZombiePlugin;
 
+/// 游戏主插件，聚合所有子插件并配置全局系统调度。
+///
+/// 添加到 `App` 后会自动初始化状态机、注册固定时间步长、
+/// 配置系统集连锁顺序、附加所有子插件以及注册关卡生命周期相关的 Startup/OnEnter/OnExit 系统。
 pub struct GamePlugin;
 
 impl Plugin for GamePlugin {
@@ -57,20 +71,24 @@ impl Plugin for GamePlugin {
     }
 }
 
+/// 生成主摄像机实体（2D 正交相机）。
 fn setup_camera(mut commands: Commands) {
     commands.spawn((Camera2d, Name::new("Main camera")));
 }
 
+/// 进入 Loading 状态后立即切换到 Playing，触发关卡初始化。
 fn enter_playing(mut next_state: ResMut<NextState<GameState>>) {
     next_state.set(GameState::Playing);
 }
 
+/// 退出 Playing 状态时清除所有带有 [`LevelEntity`] 标记的实体，确保关卡完全重置。
 fn cleanup_level(mut commands: Commands, level_entities: Query<Entity, With<LevelEntity>>) {
     for entity in &level_entities {
         commands.entity(entity).despawn();
     }
 }
 
+/// 按 R 键重新开始关卡（Loading 状态下忽略，防止重复触发）。
 fn restart_level(
     keyboard: Res<ButtonInput<KeyCode>>,
     state: Res<State<GameState>>,

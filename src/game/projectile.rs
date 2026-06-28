@@ -1,16 +1,34 @@
+//! 弹丸系统
+//!
+//! 管理两种弹丸的完整生命周期：
+//!
+//! - **路径弹丸（Pea）**：无物理碰撞体，通过扫掠检测（Swept Circle）每帧检测与僵尸的碰撞，
+//!   命中即销毁。速度为恒定线性。
+//!
+//! - **物理弹丸（PhysicsPea）**：拥有 Rapier2D 刚体和碰撞体，受重力影响，
+//!   可弹跳、穿透多个目标，与物理世界边界交互。
+//!
+//! 调度阶段：
+//! - `Spawn`：消费 [`SpawnProjectile`] 消息，根据种类创建弹丸实体
+//! - `LogicMovement`：路径弹丸按速度前进
+//! - `ContactRead`：路径弹丸扫掠检测 + 物理弹丸碰撞事件收集
+//! - `Combat`：弹丸命中解析，发出 [`ApplyDamage`](crate::game::combat::ApplyDamage)
+//! - `DeathAndCleanup`：弹丸超时或超出边界时销毁
+
 use std::collections::HashSet;
 use std::time::Duration;
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
-use super::combat::{ApplyDamage, DamageKind, Team};
-use super::lawn::{Lane, LawnLayout};
-use super::physics::physics_projectile_groups;
-use super::schedule::GameSet;
-use super::state::{GameState, LevelEntity};
-use super::zombie::Zombie;
+use crate::game::combat::{ApplyDamage, DamageKind, Team};
+use crate::game::lawn::{Lane, LawnLayout};
+use crate::game::physics::physics_projectile_groups;
+use crate::game::schedule::GameSet;
+use crate::game::state::{GameState, LevelEntity};
+use crate::game::zombie::Zombie;
 
+/// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
 pub struct ProjectilePlugin;
 
 impl Plugin for ProjectilePlugin {
@@ -39,7 +57,7 @@ impl Plugin for ProjectilePlugin {
                 FixedUpdate,
                 resolve_projectile_hits
                     .in_set(GameSet::Combat)
-                    .before(super::combat::apply_damage)
+                    .before(crate::game::combat::apply_damage)
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
@@ -52,20 +70,28 @@ impl Plugin for ProjectilePlugin {
     }
 }
 
+/// 弹丸种类枚举。
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ProjectileKind {
+    /// 普通豌豆：路径运动、逻辑碰撞、命中即毁。
     Pea,
+    /// 物理豌豆：物理运动、Rapier 碰撞、可弹跳穿透。
     PhysicsPea,
 }
 
+/// 弹丸属性定义：伤害、生命周期、速度。
 #[derive(Debug, Clone, Copy)]
 pub struct ProjectileDefinition {
+    /// 命中时造成的伤害值。
     pub damage: f32,
+    /// 弹丸最长存活时间（超时自动销毁）。
     pub lifetime: Duration,
+    /// 弹丸水平移动速度（像素/秒）。
     pub speed: f32,
 }
 
 impl ProjectileDefinition {
+    /// 根据弹丸种类返回对应的属性配置。
     pub fn for_kind(kind: ProjectileKind) -> Self {
         match kind {
             ProjectileKind::Pea => Self {
@@ -82,52 +108,78 @@ impl ProjectileDefinition {
     }
 }
 
+/// 弹丸核心组件，携带伤害数据和生命周期计时器。
 #[derive(Component, Debug)]
 pub struct Projectile {
+    /// 发射此弹丸的实体（用于伤害归属）。
     pub owner: Entity,
+    /// 弹丸所属阵营（用于过滤友军伤害）。
     pub team: Team,
+    /// 命中伤害值。
     pub damage: f32,
+    /// 生命周期计时器（超时自动销毁）。
     pub lifetime: Timer,
 }
 
+/// 弹丸运动模式组件。
 #[derive(Component, Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ProjectileMotion {
+    /// 路径运动模式：无物理、线性移动、扫掠碰撞检测。
     Path,
+    /// 物理运动模式：Rapier 刚体驱动、真实碰撞事件。
     Physics,
 }
 
+/// 内部组件：路径弹丸的速度向量。
 #[derive(Component, Debug)]
 struct PathVelocity(Vec2);
 
+/// 内部组件：路径弹丸上一帧的位置，用于扫掠碰撞检测。
 #[derive(Component, Debug)]
 struct PreviousPosition(Vec2);
 
+/// 命中策略组件，控制弹丸命中后的行为。
 #[derive(Component, Debug)]
 pub struct HitPolicy {
+    /// 命中时是否立即销毁（普通豌豆为 true，物理豌豆为 false）。
     pub destroy_on_hit: bool,
+    /// 剩余可穿透目标数（物理豌豆可多次穿透，用 `u8::MAX` 表示无限）。
     pub remaining_pierces: u8,
 }
 
+/// 内部组件：已命中实体注册表，防止对同一目标的重复命中。
 #[derive(Component, Debug, Default)]
 struct HitRegistry(HashSet<Entity>);
 
+/// 生成弹丸的请求消息。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SpawnProjectile {
+    /// 发射者实体。
     pub owner: Entity,
+    /// 弹丸生成位置。
     pub origin: Vec2,
+    /// 弹丸所在行（用于同行碰撞检测）。
     pub lane: Lane,
+    /// 弹丸种类。
     pub kind: ProjectileKind,
 }
 
+/// 弹丸命中事件消息，由碰撞检测系统发出，[`resolve_projectile_hits`] 消费。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct ProjectileHit {
+    /// 命中的弹丸实体。
     pub projectile: Entity,
+    /// 被命中的目标实体。
     pub target: Entity,
 }
 
+/// 消费 [`SpawnProjectile`] 消息，创建对应的弹丸实体。
+///
+/// 根据种类不同，普通豌豆附加路径运动组件，物理豌豆附加 Rapier 物理组件。
 fn spawn_projectiles(mut commands: Commands, mut requests: MessageReader<SpawnProjectile>) {
     for request in requests.read() {
         let definition = ProjectileDefinition::for_kind(request.kind);
+        // 共享基础组件：精灵、变换、Projectile 核心组件、行、命中注册表等
         let base = (
             Sprite::from_color(
                 match request.kind {
@@ -185,6 +237,7 @@ fn spawn_projectiles(mut commands: Commands, mut requests: MessageReader<SpawnPr
     }
 }
 
+/// 路径弹丸运动：每帧记录上一帧位置并按速度向量更新当前位置。
 fn advance_path_projectiles(
     time: Res<Time<Fixed>>,
     mut projectiles: Query<
@@ -198,6 +251,7 @@ fn advance_path_projectiles(
     }
 }
 
+/// 路径弹丸的 Query 数据类型别名。
 type PathProjectileData<'a> = (
     Entity,
     &'a Transform,
@@ -205,8 +259,12 @@ type PathProjectileData<'a> = (
     &'a Lane,
     &'a HitRegistry,
 );
+
+/// 路径弹丸 Query 过滤条件。
 type PathProjectileFilter = (With<Projectile>, With<PathVelocity>);
 
+/// 路径弹丸碰撞检测：对每个弹丸，扫掠其上一帧到当前位置的线段，
+/// 检测是否与同行的僵尸发生碰撞（使用 swept_circle_hit_t 算法），取最近的命中。
 fn query_path_projectile_hits(
     projectiles: Query<PathProjectileData<'_>, PathProjectileFilter>,
     zombies: Query<(Entity, &Transform, &Lane), With<Zombie>>,
@@ -234,6 +292,7 @@ fn query_path_projectile_hits(
     }
 }
 
+/// 收集 Rapier2D 碰撞事件，筛选出物理弹丸与僵尸之间的碰撞，转化为 [`ProjectileHit`] 消息。
 fn collect_rapier_collision_events(
     mut collisions: MessageReader<CollisionEvent>,
     projectiles: Query<&ProjectileMotion, With<Projectile>>,
@@ -257,6 +316,13 @@ fn collect_rapier_collision_events(
     }
 }
 
+/// 处理所有 [`ProjectileHit`] 消息。
+///
+/// 对每个命中：
+/// 1. 检查是否已注册过（防止重复命中同一目标）
+/// 2. 检查弹丸阵营（仅植物弹丸造成伤害）
+/// 3. 发出 [`ApplyDamage`] 伤害消息
+/// 4. 按命中策略决定销毁弹丸或减少穿透计数
 fn resolve_projectile_hits(
     mut commands: Commands,
     mut hits: MessageReader<ProjectileHit>,
@@ -288,6 +354,7 @@ fn resolve_projectile_hits(
     }
 }
 
+/// 检查所有弹丸的生命周期计时器，超时或超出世界边界的弹丸被销毁。
 fn tick_projectile_lifetimes(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
@@ -303,6 +370,7 @@ fn tick_projectile_lifetimes(
     }
 }
 
+/// 调试用：N 键发射普通豌豆，P 键发射物理豌豆（沙盒模式）。
 fn projectile_sandbox_keys(
     keyboard: Res<ButtonInput<KeyCode>>,
     layout: Res<LawnLayout>,
@@ -331,8 +399,12 @@ fn projectile_sandbox_keys(
     }
 }
 
-/// Sweeps a circle along a segment against an axis-aligned box and returns first contact time.
-/// Expanding the box by the circle radius reduces this to a segment/AABB slab test.
+/// 将圆沿线段扫掠，检测与轴对齐盒体（AABB）的碰撞，返回首次接触时间参数 t ∈ [0, 1]。
+///
+/// 将盒体按圆半径扩展后，问题简化为线段与扩展 AABB 的板条（slab）测试。
+/// `start` / `end`：线段的起点和终点；`center`：AABB 中心；
+/// `half`：AABB 的半边长；`radius`：圆的半径。
+/// 返回 `None` 表示无碰撞，`Some(t)` 表示在参数 t 处首次接触。
 fn swept_circle_hit_t(
     start: Vec2,
     end: Vec2,
