@@ -11,6 +11,7 @@
 use std::time::Duration;
 
 use bevy::prelude::*;
+use bevy::sprite::Text2dShadow;
 use bevy_rapier2d::prelude::*;
 
 use crate::game::combat::{Dead, Health, Team};
@@ -67,12 +68,12 @@ impl PlantKind {
     /// 所有植物种类的列表，用于遍历注册。
     pub const ALL: [Self; 3] = [Self::Sunflower, Self::Peashooter, Self::WallNut];
 
-    /// 返回植物的显示名称（英文，与原版 PvZ 一致）。
+    /// 返回植物在场景名牌和卡片中使用的简短中文名称。
     pub fn display_name(self) -> &'static str {
         match self {
-            Self::Sunflower => "Sunflower",
-            Self::Peashooter => "Peashooter",
-            Self::WallNut => "Wall-nut",
+            Self::Sunflower => "向日葵",
+            Self::Peashooter => "豌豆",
+            Self::WallNut => "坚果",
         }
     }
 
@@ -142,12 +143,15 @@ pub struct PlantRequest {
 /// 条件通过后：扣除太阳、触发卡片冷却、生成精灵/碰撞体/标记组件、更新格子占用表。
 fn place_plants(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut requests: MessageReader<PlantRequest>,
     layout: Res<LawnLayout>,
     mut occupancy: ResMut<CellOccupancy>,
     mut sun: ResMut<SunBank>,
     mut cards: ResMut<PlantCards>,
 ) {
+    let label_font = asset_server.load("fonts/NotoSansSC-VF.ttf");
+
     for request in requests.read() {
         if !occupancy.is_available(request.cell, &layout)
             || !cards.ready(request.kind)
@@ -158,6 +162,7 @@ fn place_plants(
 
         cards.trigger(request.kind);
         let position = layout.cell_center(request.cell);
+        // 色块继续承担碰撞与阵营辨识；子级中文名牌直接说明植物身份。
         let mut entity = commands.spawn((
             Sprite::from_color(request.kind.color(), Vec2::new(58.0, 68.0)),
             Transform::from_translation(position.extend(1.0)),
@@ -172,6 +177,23 @@ fn place_plants(
             plant_groups(),
             crate::game::state::LevelEntity,
             Name::new(request.kind.display_name()),
+            children![(
+                Text2d::new(request.kind.display_name()),
+                TextFont {
+                    font: label_font.clone(),
+                    font_size: 16.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.98, 0.88)),
+                TextBackgroundColor(Color::srgba(0.05, 0.08, 0.04, 0.72)),
+                TextLayout::new_with_justify(Justify::Center),
+                Text2dShadow {
+                    offset: Vec2::new(1.5, -1.5),
+                    color: Color::srgba(0.0, 0.0, 0.0, 0.9),
+                },
+                Transform::from_xyz(0.0, -3.0, 3.0),
+                Name::new("植物名称"),
+            )],
         ));
 
         // 坚果墙没有周期性动作，不加 ActionTimer。

@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
+use bevy::sprite::Text2dShadow;
 use bevy::{ecs::system::SystemParam, prelude::*};
 
 use crate::game::combat::{EntityDied, Team};
@@ -92,17 +93,50 @@ impl Default for LevelDefinition {
         Self {
             // 默认 11 个僵尸的关卡配置，分布在 5 行、约 53 秒内
             spawns: vec![
-                ZombieSpawn { at_seconds: 4.0, lane: Lane(2) },
-                ZombieSpawn { at_seconds: 10.0, lane: Lane(0) },
-                ZombieSpawn { at_seconds: 14.0, lane: Lane(4) },
-                ZombieSpawn { at_seconds: 20.0, lane: Lane(1) },
-                ZombieSpawn { at_seconds: 24.0, lane: Lane(3) },
-                ZombieSpawn { at_seconds: 31.0, lane: Lane(2) },
-                ZombieSpawn { at_seconds: 36.0, lane: Lane(0) },
-                ZombieSpawn { at_seconds: 38.0, lane: Lane(4) },
-                ZombieSpawn { at_seconds: 46.0, lane: Lane(1) },
-                ZombieSpawn { at_seconds: 47.5, lane: Lane(3) },
-                ZombieSpawn { at_seconds: 53.0, lane: Lane(2) },
+                ZombieSpawn {
+                    at_seconds: 4.0,
+                    lane: Lane(2),
+                },
+                ZombieSpawn {
+                    at_seconds: 10.0,
+                    lane: Lane(0),
+                },
+                ZombieSpawn {
+                    at_seconds: 14.0,
+                    lane: Lane(4),
+                },
+                ZombieSpawn {
+                    at_seconds: 20.0,
+                    lane: Lane(1),
+                },
+                ZombieSpawn {
+                    at_seconds: 24.0,
+                    lane: Lane(3),
+                },
+                ZombieSpawn {
+                    at_seconds: 31.0,
+                    lane: Lane(2),
+                },
+                ZombieSpawn {
+                    at_seconds: 36.0,
+                    lane: Lane(0),
+                },
+                ZombieSpawn {
+                    at_seconds: 38.0,
+                    lane: Lane(4),
+                },
+                ZombieSpawn {
+                    at_seconds: 46.0,
+                    lane: Lane(1),
+                },
+                ZombieSpawn {
+                    at_seconds: 47.5,
+                    lane: Lane(3),
+                },
+                ZombieSpawn {
+                    at_seconds: 53.0,
+                    lane: Lane(2),
+                },
             ],
         }
     }
@@ -250,8 +284,15 @@ fn tick_card_cooldowns(time: Res<Time<Fixed>>, mut cards: ResMut<PlantCards>) {
 }
 
 /// 消费 [`SpawnSun`] 消息，生成太阳拾取物实体。
-fn spawn_sun_pickups(mut commands: Commands, mut requests: MessageReader<SpawnSun>) {
+fn spawn_sun_pickups(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut requests: MessageReader<SpawnSun>,
+) {
+    let label_font = asset_server.load("fonts/NotoSansSC-VF.ttf");
+
     for request in requests.read() {
+        // 太阳数值名牌与拾取物组成父子关系，浮动时保持同步且便于整体销毁。
         commands.spawn((
             Sprite::from_color(Color::srgb(1.0, 0.86, 0.15), Vec2::splat(34.0)),
             Transform::from_translation(request.position.extend(8.0)),
@@ -261,7 +302,24 @@ fn spawn_sun_pickups(mut commands: Commands, mut requests: MessageReader<SpawnSu
                 age: 0.0,
             },
             LevelEntity,
-            Name::new("Sun pickup"),
+            Name::new("太阳拾取物"),
+            children![(
+                Text2d::new(format!("太阳 +{}", request.value)),
+                TextFont {
+                    font: label_font.clone(),
+                    font_size: 13.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(0.22, 0.12, 0.01)),
+                TextBackgroundColor(Color::srgba(1.0, 0.94, 0.55, 0.88)),
+                TextLayout::new_with_justify(Justify::Center),
+                Text2dShadow {
+                    offset: Vec2::new(1.0, -1.0),
+                    color: Color::srgba(1.0, 1.0, 1.0, 0.65),
+                },
+                Transform::from_xyz(0.0, -28.0, 2.0),
+                Name::new("太阳数值"),
+            )],
         ));
     }
 }
@@ -329,12 +387,11 @@ fn handle_world_clicks(mut params: WorldClickParams) {
     }
 }
 
-/// 太阳拾取物动画：上下浮动（正弦波）并缓慢旋转。
+/// 太阳拾取物动画：上下浮动。名牌需要保持水平，因此不旋转整个实体。
 fn animate_sun_pickups(time: Res<Time>, mut pickups: Query<(&mut Transform, &mut SunPickup)>) {
     for (mut transform, mut pickup) in &mut pickups {
         pickup.age += time.delta_secs();
         transform.translation.y = pickup.base_y + (pickup.age * 2.2).sin() * 6.0;
-        transform.rotate_z(time.delta_secs() * 0.7);
     }
 }
 

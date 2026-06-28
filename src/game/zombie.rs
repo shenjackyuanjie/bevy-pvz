@@ -11,6 +11,7 @@
 //! - `LogicMovement`：状态更新（检测前方植物）→ 行走移动 → 攻击计时（链式执行）
 
 use bevy::prelude::*;
+use bevy::sprite::Text2dShadow;
 use bevy_rapier2d::prelude::*;
 
 use crate::game::combat::{ApplyDamage, DamageKind, Health, Team};
@@ -79,27 +80,53 @@ pub struct SpawnZombie {
 /// 处理 [`SpawnZombie`] 消息，在棋盘右侧生成基本僵尸实体。
 pub(crate) fn spawn_zombies(
     mut commands: Commands,
+    asset_server: Option<Res<AssetServer>>,
     mut requests: MessageReader<SpawnZombie>,
     layout: Res<LawnLayout>,
 ) {
+    let label_font = asset_server
+        .as_ref()
+        .map(|assets| assets.load("fonts/NotoSansSC-VF.ttf"))
+        .unwrap_or_default();
+
     for request in requests.read() {
         let position = Vec2::new(layout.right() + 75.0, layout.lane_y(request.lane));
+        // 名牌作为僵尸子实体，会自动跟随移动并在僵尸销毁时一并清理。
         commands.spawn((
-            Sprite::from_color(Color::srgb(0.42, 0.48, 0.38), Vec2::new(58.0, 82.0)),
-            Transform::from_translation(position.extend(2.0)),
-            Zombie { speed: 17.0 },
-            ZombieState::Walking,
-            AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
-            request.lane,
-            Health::new(100.0),
-            Team::Zombies,
-            RigidBody::KinematicPositionBased,
-            Collider::cuboid(29.0, 41.0),
-            LockedAxes::ROTATION_LOCKED,
-            ActiveEvents::COLLISION_EVENTS,
-            zombie_groups(),
-            LevelEntity,
-            Name::new("Basic zombie"),
+            (
+                Sprite::from_color(Color::srgb(0.42, 0.48, 0.38), Vec2::new(58.0, 82.0)),
+                Transform::from_translation(position.extend(2.0)),
+                Zombie { speed: 17.0 },
+                ZombieState::Walking,
+                AttackTimer(Timer::from_seconds(1.0, TimerMode::Repeating)),
+                request.lane,
+                Health::new(100.0),
+                Team::Zombies,
+                RigidBody::KinematicPositionBased,
+                Collider::cuboid(29.0, 41.0),
+                LockedAxes::ROTATION_LOCKED,
+                ActiveEvents::COLLISION_EVENTS,
+                zombie_groups(),
+                LevelEntity,
+                Name::new("普通僵尸"),
+            ),
+            children![(
+                Text2d::new("僵尸"),
+                TextFont {
+                    font: label_font.clone(),
+                    font_size: 17.0,
+                    ..default()
+                },
+                TextColor(Color::srgb(1.0, 0.96, 0.88)),
+                TextBackgroundColor(Color::srgba(0.11, 0.08, 0.05, 0.76)),
+                TextLayout::new_with_justify(Justify::Center),
+                Text2dShadow {
+                    offset: Vec2::new(1.5, -1.5),
+                    color: Color::BLACK,
+                },
+                Transform::from_xyz(0.0, -4.0, 3.0),
+                Name::new("僵尸名称"),
+            )],
         ));
     }
 }
