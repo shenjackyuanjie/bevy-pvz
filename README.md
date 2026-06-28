@@ -1,89 +1,95 @@
 # bevy-pvz
 
-一个使用 Bevy 和 Rapier 2D 编写的可玩单关 PvZ 类游戏原型。当前版本已经接通种植、经济、波次、战斗、物理弹丸和胜负重开闭环。
+一个使用 Bevy 与 Rapier 2D 编写的单关 PvZ 类游戏原型。项目已经接通种植、阳光经济、固定波次、战斗、两类弹丸、胜负和重开流程。
 
-当前阶段不复刻原作素材，统一使用简单图形和文字占位。
+当前版本使用简单图形与文字作为占位表现，不包含原作受版权保护的素材。
 
-## 当前状态
+## 当前完成度
 
-- [x] 使用 Bevy `0.18.1`
-- [x] 接入 `bevy_rapier2d 0.34.0` / `rapier2d 0.32.0`
-- [x] 启用 Rapier 2D 调试渲染
-- [x] `cargo check` 通过
-- [x] `cargo test` 通过（10 项）且 Clippy 无警告
-- [x] 建立游戏状态、固定时间步和插件骨架
-- [x] 完成普通弹丸与 Rapier 物理弹丸沙盒
-- [x] 完成三种植物、普通僵尸和伤害闭环
-- [x] 完成点击种植、阳光、卡片冷却、固定波次和单关胜负
-- [ ] 使用原创精灵、动画、音效和粒子替换占位表现
+- [x] Bevy `0.18.1`、bevy_rapier2d `0.34.0`、rapier2d `0.32.0`
+- [x] 60 Hz 固定更新与明确的玩法/物理调度顺序
+- [x] 5 行 9 列草坪和点击种植
+- [x] 向日葵、豌豆射手和坚果
+- [x] 普通僵尸的行走、受阻、啃咬和死亡
+- [x] 直线逻辑豌豆和 Rapier 抛射物理豌豆
+- [x] 阳光拾取、资源消耗和植物卡片冷却
+- [x] 11 个固定时间点波次、胜利、失败和重开
+- [x] HUD、占位 Sprite 和 Rapier 碰撞体调试渲染
+- [x] 10 项自动化测试及零警告 Clippy 检查
+- [ ] 原创精灵、动画、音效、粒子和命中反馈
 
-## 运行与操作
+## 快速开始
+
+环境要求：Rust stable，首要运行平台为 Windows 桌面。
 
 ```powershell
 cargo run
 ```
 
-- `1` / `2` / `3`：选择向日葵、豌豆射手、坚果。
-- 鼠标左键：在草坪种植；点击黄色阳光可收集。
-- `N`：从中间行生成普通直线豌豆，用于弹丸沙盒调试。
-- `P`：从中间行抛出受重力、可弹跳且开启 CCD 的物理豌豆。
-- `D`：开关 Rapier 碰撞体调试渲染。
-- `R`：随时重开；胜利或失败后也使用该键开始新一局。
+启用了 Bevy `dynamic_linking` 以改善开发期增量编译体验，因此开发时应优先使用 `cargo run`，不要把裸 `target/debug/bevy-pvz.exe` 当作可分发版本。
 
-HUD 显示阳光、已投放波次数、击杀数、关卡时间、当前卡片、价格和冷却。当前单关包含 11 个按时间和行配置的普通僵尸。
+### 操作
 
-## 技术基线
+| 输入 | 功能 |
+| --- | --- |
+| `1` / `2` / `3` | 选择向日葵、豌豆射手或坚果 |
+| 鼠标左键 | 在草坪格子种植；点击黄色阳光时优先收集阳光 |
+| `N` | 从中间行发射普通直线豌豆，用于弹丸调试 |
+| `P` | 从中间行抛出受重力影响的物理豌豆 |
+| `D` | 开关 Rapier 碰撞体调试渲染 |
+| `R` | 随时重开当前关卡；胜负画面中开始新一局 |
 
-- Rust 2024 edition
-- Bevy 0.18.1
-- bevy_rapier2d 0.34.0
-- 首要平台：Windows 桌面
-- 游戏模拟：固定时间步，目标 60 Hz
-- 表现：2D Sprite、基础 UI 和占位资源
+HUD 显示当前阳光、已经派发的波次、击杀数、关卡时间、选中的植物、价格和剩余冷却。
 
-暂时使用 Bevy 0.18.1，是因为当前发布版 bevy_rapier2d 与其兼容。升级 Bevy 0.19 时，优先等待正式兼容的 Rapier 插件版本，不直接依赖尚未完成的 Draft PR。
+## 玩法实现
 
-## 核心设计
+### 草坪与种植
 
-### 游戏逻辑与物理解耦
+- `LawnLayout` 集中管理行列数、单元格尺寸和世界原点。
+- 世界坐标和 `GridCell` 的换算是无 ECS 的纯函数。
+- `CellOccupancy` 保证一个格子只能存在一株植物。
+- 种植请求统一检查格子、阳光和卡片冷却，成功后再原子扣费并占用格子。
+- 植物死亡时释放占用，僵尸可以继续前进。
 
-- 植物、僵尸、伤害、阳光和波次属于游戏逻辑，不直接依赖 Rapier API。
-- 僵尸保持原版式的按行推进、受阻啃咬和死亡，不交给动态刚体自由模拟。
-- Rapier 主要负责物理弹丸、碰撞体、接触事件和场地边界。
-- Rapier 的碰撞事件先转换成游戏自己的 `ProjectileHit` / `ApplyDamage` 消息，再由战斗系统处理。
-- Rapier 类型集中在物理和弹丸模块，降低未来 Bevy/Rapier 升级成本。
+### 植物
+
+| 植物 | 价格 | 作用 |
+| --- | ---: | --- |
+| 向日葵 | 50 | 周期性生成可点击收集的 25 点阳光 |
+| 豌豆射手 | 100 | 本行前方存在僵尸时周期性发射普通豌豆 |
+| 坚果 | 50 | 以较高生命值阻挡僵尸 |
+
+植物配置包含价格、卡片冷却、生命值和行为参数；表现资源不参与战斗判定。
+
+### 僵尸
+
+普通僵尸使用两种逻辑状态：
+
+- `Walking`：沿所在行向房屋方向移动。
+- `Eating { target }`：检测到近距离同排植物后停止并周期性造成啃咬伤害。
+
+僵尸使用 Rapier 运动学刚体，让物理豌豆能够稳定接触；接触力不会改变僵尸由游戏逻辑控制的移动规则。
 
 ### 两类弹丸
 
-普通弹丸和物理弹丸共享阵营、伤害、寿命、穿透和命中规则，但使用不同的移动管线。
+两条管线共享 `Projectile`、阵营、伤害、寿命、命中记录和 `ProjectileHit` 消息，但移动方式不同。
 
-1. 普通弹丸
-   - 按直线、曲线或其他给定路径移动。
-   - 位置由游戏系统计算，不受重力或接触力影响。
-   - 使用上一帧位置到新位置的 swept segment/AABB 连续查询，避免高速弹丸穿过僵尸。
-   - 首个实现为原版式直线豌豆。
+普通豌豆：
 
-2. 物理弹丸
-   - 使用 Rapier 动态刚体。
-   - 由初速度、重力、质量、摩擦和恢复系数驱动。
-   - 开启 CCD，减少高速运动时的穿透。
-   - 首个实现为可抛射、落地和弹跳的物理豌豆。
-   - 默认与僵尸、草坪边界和其他物理弹丸碰撞；具体碰撞组由弹丸定义控制。
+- 由固定更新系统直接推进位置，不受重力和接触力影响。
+- 使用上一位置到新位置的 swept segment/AABB 查询命中最近目标。
+- 即使低帧率下单帧跨过僵尸，也不会只依赖终点重叠检测。
+- 默认命中后销毁。
 
-### 碰撞分层
+物理豌豆：
 
-计划定义以下 Rapier `Group`：
+- 使用 `RigidBody::Dynamic`、圆形 `Collider` 和初速度。
+- 受重力、摩擦和恢复系数影响，可以落地、撞墙和弹跳。
+- 开启 `Ccd`，降低高速运动时的穿透风险。
+- Rapier `CollisionEvent` 会先转换成项目自己的 `ProjectileHit`，再进入统一伤害结算。
+- `HitRegistry` 防止同一个物理豌豆对同一目标重复结算伤害。
 
-- `PLANT`
-- `ZOMBIE`
-- `NORMAL_PROJECTILE`
-- `PHYSICS_PROJECTILE`
-- `WORLD_BOUNDARY`
-- `MOWER`
-
-普通弹丸默认只查询僵尸，不创建动态刚体；其 Rapier 分组位保留给后续查询适配。物理弹丸默认接触僵尸、物理弹丸和世界边界。植物与僵尸之间的阻挡由行内战斗逻辑决定，Rapier 碰撞体只提供空间信息，不负责 AI 状态切换。
-
-## 插件划分
+## 架构
 
 ```mermaid
 flowchart LR
@@ -98,216 +104,72 @@ flowchart LR
     Physics --> Projectile
     Lawn --> Plant
     Lawn --> Zombie
-    Combat --> Plant
-    Combat --> Zombie
     Projectile --> Combat
+    Plant --> Combat
+    Zombie --> Combat
     Level --> Plant
     Level --> Zombie
     Level --> UI
 ```
 
-### `GamePlugin`
+| 模块 | 主要职责 |
+| --- | --- |
+| `game/mod.rs` | 组合插件、相机、状态进入、关卡清理和重开 |
+| `state.rs` | `GameState` 与关卡实体统一标记 |
+| `schedule.rs` | 固定更新中的玩法 `GameSet` |
+| `physics.rs` | Rapier 安装、调度、碰撞分组、地面/侧墙和调试开关 |
+| `lawn.rs` | 草坪布局、格子/行坐标、占用和占位绘制 |
+| `combat.rs` | 生命、阵营、伤害、死亡消息及实体清理 |
+| `projectile.rs` | 两类弹丸的生成、移动、碰撞转换、伤害和寿命 |
+| `plant.rs` | 种植、三种植物行为和死亡后的格子释放 |
+| `zombie.rs` | 普通僵尸生成、状态切换、行走和啃咬 |
+| `level.rs` | 阳光、卡片、输入、固定波次、统计和胜负 |
+| `ui.rs` | HUD、操作提示、胜负画面和结果清理 |
 
-负责应用级组合和系统顺序，不放具体玩法。
+玩法模块之间通过 `SpawnProjectile`、`ProjectileHit`、`ApplyDamage`、`EntityDied`、`SpawnZombie` 和 `SpawnSun` 等消息连接，避免植物、僵尸和弹丸系统相互直接修改内部状态。
 
-- 注册所有子插件。
-- 定义 `GameState`：`Loading`、`Playing`、`Victory`、`Defeat`。
-- 定义固定更新中的游戏 `SystemSet`。
-- 只在 `Playing` 状态运行模拟系统。
+### 游戏状态
 
-主要 system：
+```text
+Loading -> Playing -> Victory
+                   \-> Defeat
 
-- `setup_camera`
-- `enter_playing`
-- `cleanup_level`
-- `restart_level`
+R: Playing / Victory / Defeat -> Loading -> Playing
+```
 
-### `GamePhysicsPlugin`
+离开 `Playing` 时，所有带 `LevelEntity` 的视觉、单位、弹丸和物理边界都会统一清理。
 
-项目唯一直接配置 Rapier 调度的入口。
-
-- 安装 `RapierPhysicsPlugin::<NoUserData>`。
-- 使用 `pixels_per_meter(100.0)` 和 `in_fixed_schedule()`。
-- 开发期安装 `RapierDebugRenderPlugin`。
-- 创建草坪地面、顶部/底部边界和弹丸清理边界。
-- 定义并复用碰撞组构造函数。
-
-主要 system：
-
-- `setup_physics_world`
-- `toggle_physics_debug`
-- `cleanup_out_of_bounds_bodies`
-
-### `LawnPlugin`
-
-负责棋盘坐标，不负责植物行为。
-
-主要数据：
-
-- `LawnLayout`：行列数、单元格尺寸、棋盘原点。
-- `GridCell { row, column }`。
-- `CellOccupancy`：单元格到植物实体的映射。
-- `Lane`：僵尸、植物和弹丸使用的行标识。
-
-主要 system：
-
-- `draw_lawn_placeholders`
-- `cursor_to_grid_cell`
-- `validate_plant_placement`
-- `track_cell_occupancy`
-- `release_cell_on_plant_removed`
-
-坐标换算、边界判断和占用规则写成无 ECS 的纯函数，便于单元测试。
-
-### `CombatPlugin`
-
-集中处理生命、伤害和死亡，避免植物、僵尸和弹丸互相直接修改组件。
-
-主要组件和消息：
-
-- `Health { current, max }`
-- `Armor`（后续扩展）
-- `Team`
-- `ApplyDamage { source, target, amount, kind }`
-- `EntityDied { entity, killer }`
-
-主要 system：
-
-- `apply_damage`
-- `detect_death`
-- `emit_death_messages`
-- `cleanup_dead_entities`
-
-伤害应用与实体清理分开执行，确保同一固定帧内的多个命中按稳定顺序结算。
-
-### `ProjectilePlugin`
-
-同时管理普通弹丸和物理弹丸，并对外隐藏 Rapier 细节。
-
-主要数据：
-
-- `ProjectileKind`
-- `ProjectileDefinition`
-- `Projectile { owner, team, damage, lifetime }`
-- `ProjectileMotion::Path(...)` / `ProjectileMotion::Physics`
-- `HitPolicy`：穿透、重复命中冷却、命中后销毁等规则。
-- `SpawnProjectile`、`ProjectileHit` 消息。
-
-主要 system：
-
-- `spawn_projectiles`
-- `advance_path_projectiles`
-- `query_path_projectile_hits`
-- `collect_rapier_collision_events`
-- `resolve_projectile_hits`
-- `tick_projectile_lifetimes`
-- `cleanup_expired_projectiles`
-
-物理弹丸生成 `RigidBody::Dynamic`、`Collider`、`Velocity`、`Restitution`、`CollisionGroups`、`ActiveEvents` 和 `Ccd`。普通弹丸不添加动态刚体。
-
-### `PlantPlugin`
-
-植物由公共基础组件和类型行为组合，不为每种植物复制整套系统。
-
-首批植物：
-
-- 向日葵：周期性生成阳光。
-- 豌豆射手：检测本行目标并发送 `SpawnProjectile`。
-- 坚果：高生命值阻挡单位。
-
-主要 system：
-
-- `tick_plant_cooldowns`
-- `acquire_lane_targets`
-- `fire_ready_shooters`
-- `produce_sun`
-- `handle_plant_death`
-
-植物配置包含价格、冷却、生命值和行为参数；表现资源不进入战斗配置。
-
-### `ZombiePlugin`
-
-首个类型为普通僵尸。
-
-主要状态：
-
-- `Walking`
-- `Eating { target }`
-- `Dying`
-
-主要 system：
-
-- `spawn_zombies`
-- `find_blocking_plants`
-- `update_zombie_state`
-- `advance_walking_zombies`
-- `tick_zombie_attacks`
-- `detect_house_breach`
-- `handle_zombie_death`
-
-僵尸的横向移动由固定更新系统控制；Rapier 中使用运动学碰撞体，使物理豌豆可以与其产生稳定接触，但接触力不改变僵尸的行走规则。
-
-### `LevelPlugin`
-
-该插件已经实现单关时间线、资源、卡片和胜负状态。
-
-主要资源和消息：
-
-- `LevelDefinition`
-- `WaveDefinition`
-- `LevelRuntime`
-- `SunBank`
-- `PlantCardState`
-- `LevelWon` / `LevelLost`
-
-主要 system：
-
-- `tick_wave_timeline`
-- `dispatch_zombie_spawns`
-- `collect_sun`
-- `spend_sun`
-- `tick_card_cooldowns`
-- `check_victory`
-- `check_defeat`
-
-铲子、天空阳光和小推车属于这一层的后续功能，不阻塞物理与战斗原型。
-
-### `GameUiPlugin` 与表现层
-
-- 显示阳光、植物卡片、冷却、波次和胜负状态。
-- 将逻辑状态映射为占位图形、颜色和文字。
-- 动画和音效只读取游戏状态，不参与伤害与移动判定。
-- 后续替换为原创精灵图集时，不修改战斗逻辑。
-
-主要 system：
-
-- `setup_hud`
-- `update_sun_text`
-- `update_card_visuals`
-- `update_wave_progress`
-- `animate_sprites`
-- `show_level_result`
-
-## 固定更新顺序
-
-玩法和物理统一放在 `FixedUpdate`。输入、UI 和纯表现继续使用 `Update`。
+### 固定更新顺序
 
 ```text
 FixedUpdate
-  1. Spawn             消费植物开火、僵尸生成等请求
-  2. LogicMovement     更新僵尸和普通弹丸的期望位置
+  1. Spawn             波次派发、僵尸/植物/弹丸和阳光生成
+  2. LogicMovement     僵尸逻辑、普通弹丸移动、植物行为和卡片计时
   3. Physics Sync      PhysicsSet::SyncBackend
   4. Physics Step      PhysicsSet::StepSimulation
   5. Physics Writeback PhysicsSet::Writeback
-  6. ContactRead       将 Rapier 接触转换为游戏命中消息
-  7. Combat            结算弹丸命中、啃咬和伤害
-  8. DeathAndCleanup   死亡、寿命和越界清理
-  9. LevelOutcome      检查胜负
+  6. ContactRead       普通弹丸查询与 Rapier 接触转换
+  7. Combat            弹丸和啃咬伤害结算
+  8. DeathAndCleanup   死亡、格子释放、弹丸寿命和越界清理
+  9. LevelOutcome      统计击杀并检查胜负
 ```
 
-需要写入刚体速度、冲量或 Transform 的 system 必须位于 `PhysicsSet::SyncBackend` 之前；读取本帧物理位置或碰撞结果的 system 必须位于 `PhysicsSet::Writeback` 之后。
+最后一波会在 `Spawn` 阶段先派发、再生成僵尸，避免“最后一只尚未实体化但胜利检查已经成立”的竞态。
 
-## 当前目录
+### 碰撞分层
+
+当前保留以下 Rapier `Group`：
+
+- `PLANT_GROUP`
+- `ZOMBIE_GROUP`
+- `NORMAL_PROJECTILE_GROUP`
+- `PHYSICS_PROJECTILE_GROUP`
+- `WORLD_BOUNDARY_GROUP`
+- `MOWER_GROUP`
+
+普通弹丸目前不创建 Rapier 刚体，其分组位为后续查询适配预留。物理弹丸接触僵尸、其他物理弹丸和世界边界。植物与僵尸的阻挡由行内逻辑决定，而不是由动力学接触力决定。
+
+## 项目目录
 
 ```text
 src/
@@ -326,109 +188,66 @@ src/
     ui.rs
 ```
 
-当前每个子系统使用单文件；表现逻辑暂时集中在 `ui.rs` 以及各实体的占位 Sprite 中，等原创资源进入后再单独拆出 `presentation.rs`。
+当前规模下每个子系统使用单文件。等原创资源、动画和音效进入后，再按实际复杂度拆分表现层，避免提前制造空模块。
 
-## 实施阶段
-
-### 1. 基础运行框架
-
-- 创建窗口、2D 相机、游戏状态和固定时间步。
-- 安装 Rapier 固定调度与调试渲染。
-- 绘制草坪、行和世界碰撞边界。
-
-验收：窗口可运行，调试碰撞体与视觉边界对齐。
-
-### 2. 弹丸物理沙盒
-
-- 放置一个静止的假僵尸碰撞体。
-- 按键生成普通直线豌豆。
-- 按键生成受重力、可弹跳的物理豌豆。
-- 将两条管线的命中统一转换为 `ProjectileHit`。
-
-验收：普通豌豆沿给定路径命中目标；物理豌豆按预期抛射、落地、反弹并命中目标；高速弹丸不明显穿透。
-
-### 3. 战斗单位
-
-- 实现生命、伤害和死亡消息。
-- 实现普通僵尸的行走、受阻、啃咬和死亡。
-- 实现豌豆射手、向日葵和坚果。
-
-验收：植物与普通僵尸形成无需 UI 的完整战斗闭环。
-
-### 4. 单关玩法
-
-- 接入棋盘点击种植、阳光消耗和卡片冷却。
-- 增加固定波次、胜负和重开。
-- 按需要增加铲子、天空阳光和小推车。
-
-验收：玩家可以从开始游玩到明确胜利或失败。
-
-### 5. 表现与扩展
-
-- 将占位图形替换为原创精灵和动画。
-- 添加音效、粒子和命中反馈。
-- 通过新的 `ProjectileDefinition` 扩展自定义植物与物理弹丸，不修改核心调度。
-
-## 测试计划
-
-### 单元测试
-
-- 世界坐标与 `GridCell` 双向换算。
-- 越界、占用和种植合法性。
-- 本行目标筛选和最近目标选择。
-- 伤害、死亡及同帧多次伤害。
-- 弹丸寿命、穿透次数和重复命中冷却。
-- 波次结束和胜负条件。
-
-### 集成测试
-
-- `SpawnProjectile` 在固定更新中正确生成实体。
-- 普通弹丸 swept query 可以命中高速跨越的目标。
-- 物理弹丸碰撞后产生一次有效伤害并按规则反弹。
-- 不同碰撞组不会产生错误命中。
-- 僵尸在植物存在时停止并攻击，植物死亡后继续前进。
-- 离开 `Playing` 后关卡实体和物理实体全部清理。
-
-### 手动调试场景
-
-- 单行、单僵尸、两种豌豆。
-- 大量物理豌豆同时碰撞。
-- 低帧率下观察固定更新和 CCD。
-- 开关 Rapier debug render 检查视觉与碰撞体对齐。
-
-## Bevy 0.19 升级约束
-
-- 不让同一个类型同时作为 `Component` 和 `Resource`。
-- 避免在玩法模块中直接使用 `ReadRapierContext` 等适配层类型。
-- 首版不依赖动态场景序列化、自定义 RenderGraph 或底层文字排版。
-- Rapier 兼容版发布后，在独立分支同时升级 Bevy 和 bevy_rapier2d。
-- 升级后重点回归固定调度、碰撞消息、Transform 写回和 UI 文本。
-
-## 开发命令
+## 测试与质量门
 
 ```powershell
-cargo check
-cargo run
-cargo test
-cargo clippy --all-targets -- -D warnings
+cargo fmt --all -- --check
+cargo check --locked
+cargo test --locked
+cargo clippy --all-targets --locked -- -D warnings
 ```
 
-本机 Cargo 使用 rsproxy 源替换。Cargo 1.96 不允许 `cargo info` 在用户源替换存在时自动推断 registry，因此配置了以下别名：
+现有 10 项自动化测试覆盖：
+
+- 草坪坐标双向换算、越界和占用规则。
+- 生命扣减、死亡夹取和同帧多次伤害累计。
+- 阳光扣费的原子性和植物卡片冷却。
+- 最后一波在胜利检查前完成实体生成。
+- 高速普通弹丸的扫掠命中和跨行排除。
+- 普通弹丸与物理弹丸生成不同的运动组件组合。
+
+物理弹跳、碰撞体对齐、大量动态弹丸和低帧率 CCD 表现仍以 `D` 调试渲染配合手动场景检查。
+
+## 依赖与升级约束
+
+Bevy 关闭默认 feature，只启用窗口、2D 渲染、UI、默认字体、多线程和动态链接所需能力，避免编译无关的 3D、GLTF、音频、场景和 Picking 栈。
+
+当前停留在 Bevy `0.18.1`，因为发布版 bevy_rapier2d `0.34.0` 与其兼容。升级 Bevy `0.19` 时应：
+
+- 等待正式兼容的 bevy_rapier2d 版本，不直接依赖未完成的 Draft PR。
+- 在独立分支同时升级 Bevy 和 bevy_rapier2d。
+- 重点回归固定调度、碰撞消息、Transform 写回、状态资源和 UI 文本。
+- 保持 Rapier 类型集中在物理和弹丸模块，减少玩法层迁移面。
+
+本机 Cargo 使用 rsproxy 源替换。Cargo 1.96 不会为 `cargo info` 自动推断替换后的 registry，因此使用：
 
 ```powershell
 cargo rinfo bevy_rapier2d@0.34.0
 ```
 
-它等价于：
+它等价于 `cargo info bevy_rapier2d@0.34.0 --registry rsproxy`。
 
-```powershell
-cargo info bevy_rapier2d@0.34.0 --registry rsproxy
-```
+## Git 约定
+
+- 所有开发都通过 Git 管理，不把构建产物、编辑器缓存或临时日志加入版本库。
+- 提交标题使用简洁、可执行的中文，例如 `修复最后一波提前胜利问题`。
+- 提交正文说明行为变化、关键设计、测试结果以及必要的兼容性影响。
+- 一个提交保持一个连贯目的；重构和玩法变更尽量分开，方便审查与回退。
+- 提交前至少运行格式检查、测试和 Clippy 质量门。
+
+## 后续路线
+
+- 使用原创精灵图集和动画替换占位色块。
+- 添加音效、粒子、受击和死亡反馈。
+- 增加铲子、天空阳光和小推车。
+- 通过新的 `ProjectileDefinition` 扩展植物和物理弹丸。
+- 为 Rapier 碰撞组、僵尸阻挡/恢复行走和状态清理补充更多集成测试。
 
 ## 暂不包含
 
-- 原作受版权保护的图片、动画和音频
-- 多关卡和关卡编辑器
-- 联机、存档和回放
-- 完整复刻原作全部植物与僵尸
-- 在玩法稳定前进行对象池等提前优化
+- 原作受版权保护的图片、动画和音频。
+- 多关卡、关卡编辑器和完整原作单位复刻。
+- 联机、存档和回放。
+- 在玩法稳定前进行对象池等提前优化。
