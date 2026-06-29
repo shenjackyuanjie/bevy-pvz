@@ -113,7 +113,7 @@ fn setup_hud(
                     position_type: PositionType::Absolute,
                     top: px(12),
                     left: px(16),
-                    width: px(520),
+                    width: px(720),
                     flex_direction: FlexDirection::Column,
                     row_gap: px(theme.panel_gap),
                     ..default()
@@ -148,8 +148,8 @@ fn setup_hud(
 
                 left.spawn((
                     Node {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: px(theme.panel_gap),
+                        flex_direction: FlexDirection::Row,
+                        column_gap: px(theme.panel_gap),
                         ..default()
                     },
                     Name::new("植物卡片栏"),
@@ -168,6 +168,7 @@ fn setup_hud(
                                     border: UiRect::all(px(2)),
                                     border_radius: BorderRadius::all(px(theme.panel_radius)),
                                     align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
                                     ..default()
                                 },
                                 BackgroundColor(theme.card_background),
@@ -178,7 +179,7 @@ fn setup_hud(
                             .with_children(|card| {
                                 card.spawn((
                                     Text::new(format!(
-                                        "  {}  ·  {} 太阳\n    点击选择",
+                                        "{}\n{} 太阳\n可拖拽",
                                         plant.display_name, plant.price
                                     )),
                                     TextFont {
@@ -187,6 +188,7 @@ fn setup_hud(
                                         ..default()
                                     },
                                     TextColor(theme.card_text),
+                                    TextLayout::new_with_justify(Justify::Center),
                                     PlantCardLabel(kind),
                                 ));
                             });
@@ -283,8 +285,8 @@ fn update_hud(mut params: HudParams) {
             " "
         };
         text.0 = format!(
-            "{marker} {}  ·  {} 太阳\n    {state}",
-            plant.display_name, plant.price,
+            "{marker} {}\n{} 太阳\n{state}",
+            plant.display_name, plant.price
         );
         color.0 = if params.selected.0 == kind {
             params.theme.card_selected_text
