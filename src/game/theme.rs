@@ -51,7 +51,7 @@ impl Default for UiTheme {
     fn default() -> Self {
         Self {
             plant_label: SceneLabelStyle {
-                font_size: 16.0,
+                font_size: 11.0,
                 text: Color::srgb(1.0, 0.98, 0.88),
                 background: Color::srgba(0.05, 0.08, 0.04, 0.72),
                 shadow: Color::srgba(0.0, 0.0, 0.0, 0.9),
@@ -59,7 +59,7 @@ impl Default for UiTheme {
                 offset: Vec2::new(0.0, -3.0),
             },
             zombie_label: SceneLabelStyle {
-                font_size: 17.0,
+                font_size: 11.0,
                 text: Color::srgb(1.0, 0.96, 0.88),
                 background: Color::srgba(0.11, 0.08, 0.05, 0.76),
                 shadow: Color::BLACK,

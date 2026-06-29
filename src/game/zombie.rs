@@ -11,7 +11,6 @@
 //! - `LogicMovement`：状态更新（检测前方植物）→ 行走移动 → 攻击计时（链式执行）
 
 use bevy::prelude::*;
-use bevy::sprite::Text2dShadow;
 use bevy_rapier2d::prelude::*;
 
 use crate::game::assets::GameAssets;
@@ -206,10 +205,6 @@ pub(crate) fn spawn_zombies(
                 TextColor(label.text),
                 TextBackgroundColor(label.background),
                 TextLayout::new_with_justify(Justify::Center),
-                Text2dShadow {
-                    offset: label.shadow_offset,
-                    color: label.shadow,
-                },
                 Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
                 Visibility::Hidden,
                 ZombieNameText,
@@ -236,14 +231,10 @@ pub(crate) fn spawn_zombies(
                 )),
                 TextFont {
                     font,
-                    font_size: 12.0,
+                    font_size: 9.0,
                     ..default()
                 },
                 TextColor(Color::WHITE),
-                Text2dShadow {
-                    offset: Vec2::new(1.0, -1.0),
-                    color: Color::BLACK,
-                },
                 Transform::from_xyz(0.0, 63.0, 4.2),
                 Visibility::Hidden,
                 ZombieHealthText,

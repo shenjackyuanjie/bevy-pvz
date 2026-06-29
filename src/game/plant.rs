@@ -8,7 +8,6 @@
 //! - `LogicMovement`：豌豆射手检测前方僵尸并发射豌豆、向日葵定时产出太阳
 //! - `DeathAndCleanup`：死亡植物释放占用的格子
 
-use bevy::sprite::Text2dShadow;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_rapier2d::prelude::*;
 
@@ -181,10 +180,6 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
                 TextColor(label.text),
                 TextBackgroundColor(label.background),
                 TextLayout::new_with_justify(Justify::Center),
-                Text2dShadow {
-                    offset: label.shadow_offset,
-                    color: label.shadow,
-                },
                 Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
                 Visibility::Hidden,
                 PlantNameText,
