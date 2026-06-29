@@ -6,6 +6,7 @@ use bevy::prelude::*;
 pub struct ControlBindings {
     pub place_or_collect: MouseButton,
     pub restart: KeyCode,
+    pub pause: KeyCode,
     #[cfg(feature = "debug_tools")]
     pub toggle_physics: KeyCode,
     #[cfg(feature = "debug_tools")]
@@ -19,6 +20,7 @@ impl Default for ControlBindings {
         Self {
             place_or_collect: MouseButton::Left,
             restart: KeyCode::KeyR,
+            pause: KeyCode::Space,
             #[cfg(feature = "debug_tools")]
             toggle_physics: KeyCode::KeyD,
             #[cfg(feature = "debug_tools")]
@@ -32,10 +34,11 @@ impl Default for ControlBindings {
 impl ControlBindings {
     pub fn validate(&self) -> Result<(), String> {
         #[cfg(not(feature = "debug_tools"))]
-        let keys = [("restart", self.restart)];
+        let keys = [("restart", self.restart), ("pause", self.pause)];
         #[cfg(feature = "debug_tools")]
         let keys = [
             ("restart", self.restart),
+            ("pause", self.pause),
             ("toggle_physics", self.toggle_physics),
             ("spawn_path_projectile", self.spawn_path_projectile),
             ("spawn_physics_projectile", self.spawn_physics_projectile),
@@ -63,6 +66,7 @@ pub fn key_label(key: KeyCode) -> String {
         KeyCode::Digit7 => "7".into(),
         KeyCode::Digit8 => "8".into(),
         KeyCode::Digit9 => "9".into(),
+        KeyCode::Space => "空格".into(),
         other => format!("{other:?}").trim_start_matches("Key").to_string(),
     }
 }

@@ -17,6 +17,7 @@ pub mod defense;
 pub mod lawn;
 pub mod level;
 pub mod model;
+pub mod pause;
 pub mod physics;
 pub mod plant;
 pub mod projectile;
@@ -38,6 +39,7 @@ use crate::game::combat::CombatPlugin;
 use crate::game::defense::HomeDefensePlugin;
 use crate::game::lawn::LawnPlugin;
 use crate::game::level::LevelPlugin;
+use crate::game::pause::PausePlugin;
 use crate::game::physics::{GamePhysicsPlugin, PhysicsDebugSettings};
 use crate::game::plant::PlantPlugin;
 use crate::game::projectile::ProjectilePlugin;
@@ -78,6 +80,7 @@ impl Plugin for GamePlugin {
                 GamePhysicsPlugin,
                 LawnPlugin,
                 HomeDefensePlugin,
+                PausePlugin,
                 CombatPlugin,
                 ProjectilePlugin,
                 PlantPlugin,

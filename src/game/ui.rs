@@ -11,6 +11,7 @@ use crate::game::controls::{ControlBindings, key_label, mouse_label};
 use crate::game::lawn::{CellOccupancy, LawnLayout};
 use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, ShovelMode, SunBank};
 use crate::game::model::plant_model_parts;
+use crate::game::pause::game_not_paused;
 use crate::game::plant::{PlantKind, PlantRequest};
 use crate::game::projectile::{ProjectileKind, ProjectileMotion};
 use crate::game::state::{GameState, LevelEntity};
@@ -37,7 +38,8 @@ impl Plugin for GameUiPlugin {
                     update_zombie_progress,
                 )
                     .chain()
-                    .run_if(in_state(GameState::Playing)),
+                    .run_if(in_state(GameState::Playing))
+                    .run_if(game_not_paused),
             )
             .add_systems(OnEnter(GameState::Victory), show_victory)
             .add_systems(OnEnter(GameState::Defeat), show_defeat)
@@ -764,8 +766,9 @@ fn show_result(
 
 fn control_help(controls: &ControlBindings) -> String {
     let text = format!(
-        "操作说明\n按住植物卡片并拖到草坪  种植\n按住铲子并拖到植物  铲除\n{}  收集太阳\n{}  重新开始",
+        "操作说明\n按住植物卡片并拖到草坪  种植\n按住铲子并拖到植物  铲除\n{}  收集太阳\n{}  暂停 / 继续\n{}  重新开始",
         mouse_label(controls.place_or_collect),
+        key_label(controls.pause),
         key_label(controls.restart),
     );
     #[cfg(feature = "debug_tools")]

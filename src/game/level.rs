@@ -21,6 +21,7 @@ use crate::game::combat::{EntityDied, Team};
 use crate::game::config::GameplaySettings;
 use crate::game::controls::ControlBindings;
 use crate::game::lawn::{CellOccupancy, LawnLayout};
+use crate::game::pause::game_not_paused;
 use crate::game::plant::PlantKind;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
@@ -95,7 +96,9 @@ impl Plugin for LevelPlugin {
         )
         .add_systems(
             Update,
-            (handle_world_clicks, animate_sun_pickups).run_if(in_state(GameState::Playing)),
+            (handle_world_clicks, animate_sun_pickups)
+                .run_if(in_state(GameState::Playing))
+                .run_if(game_not_paused),
         );
     }
 }
