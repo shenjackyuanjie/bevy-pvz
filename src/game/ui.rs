@@ -6,11 +6,14 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 
 use crate::game::assets::GameAssets;
 use crate::game::catalog::ContentCatalog;
+use crate::game::combat::Dead;
 use crate::game::controls::{ControlBindings, key_label, mouse_label};
 use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, SelectedPlant, SunBank};
 use crate::game::plant::PlantKind;
+use crate::game::projectile::ProjectileKind;
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
+use crate::game::zombie::Zombie;
 
 /// 游戏 UI 插件，注册 HUD 初始化/更新、结果画面显示与清理系统。
 pub struct GameUiPlugin;
@@ -56,6 +59,8 @@ struct HudParams<'w, 's> {
     definition: Res<'w, LevelDefinition>,
     catalog: Res<'w, ContentCatalog>,
     theme: Res<'w, UiTheme>,
+    projectiles: Query<'w, 's, &'static ProjectileKind>,
+    living_zombies: Query<'w, 's, (), (With<Zombie>, Without<Dead>)>,
     stats: Single<'w, 's, &'static mut Text, With<HudStatsText>>,
     labels: Query<
         'w,
@@ -236,7 +241,7 @@ fn select_plant_card_from_ui(
 
 /// 刷新关卡统计和三张卡片的选中、余额及冷却视觉状态。
 fn update_hud(mut params: HudParams) {
-    params.stats.0 = format!(
+    let mut stats = format!(
         "太阳  {}     波次  {} / {}     已消灭  {}     时间  {:.1} 秒",
         params.bank.amount,
         params.runtime.waves_started(),
@@ -244,6 +249,22 @@ fn update_hud(mut params: HudParams) {
         params.runtime.defeated_zombies,
         params.runtime.elapsed.as_secs_f32(),
     );
+    let mut path_peas = 0;
+    let mut physics_peas = 0;
+    for kind in &params.projectiles {
+        match kind {
+            ProjectileKind::Pea => path_peas += 1,
+            ProjectileKind::PhysicsPea => physics_peas += 1,
+        }
+    }
+    stats.push_str(&format!(
+        "\n场上  豌豆 {}（普通 {} / 物理 {}）    存活僵尸 {}",
+        path_peas + physics_peas,
+        path_peas,
+        physics_peas,
+        params.living_zombies.iter().count(),
+    ));
+    params.stats.0 = stats;
 
     // 卡片文字说明价格和当前不可用原因。
     for (label, mut text, mut color) in &mut params.labels {

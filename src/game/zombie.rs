@@ -33,6 +33,10 @@ impl Plugin for ZombiePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SpawnZombie>()
             .add_systems(
+                Update,
+                update_zombie_health_debug.run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
                 FixedUpdate,
                 spawn_zombies
                     .in_set(GameSet::Spawn)
@@ -77,6 +81,21 @@ pub enum ZombieState {
 /// 内部组件：僵尸攻击计时器，控制啃食频率（默认 1 秒间隔）。
 #[derive(Component, Debug)]
 struct AttackTimer(Timer);
+
+#[derive(Component)]
+struct ZombieHealthText;
+
+#[derive(Component)]
+struct ZombieHealthBarFill;
+
+#[derive(Component)]
+struct ZombieHealthBarBackground;
+
+type ZombieHealthBackgroundFilter = (
+    With<ZombieHealthBarBackground>,
+    Without<ZombieHealthText>,
+    Without<ZombieHealthBarFill>,
+);
 
 /// 生成僵尸的请求消息。
 #[derive(Message, Debug, Clone, Copy)]
@@ -136,24 +155,100 @@ pub(crate) fn spawn_zombies(
                 LevelEntity,
                 Name::new(definition.display_name),
             ),
-            children![(
-                Text2d::new(definition.scene_label),
-                TextFont {
-                    font,
-                    font_size: label.font_size,
-                    ..default()
-                },
-                TextColor(label.text),
-                TextBackgroundColor(label.background),
-                TextLayout::new_with_justify(Justify::Center),
-                Text2dShadow {
-                    offset: label.shadow_offset,
-                    color: label.shadow,
-                },
-                Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
-                Name::new("僵尸名称"),
-            )],
+            children![
+                (
+                    Text2d::new(definition.scene_label),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: label.font_size,
+                        ..default()
+                    },
+                    TextColor(label.text),
+                    TextBackgroundColor(label.background),
+                    TextLayout::new_with_justify(Justify::Center),
+                    Text2dShadow {
+                        offset: label.shadow_offset,
+                        color: label.shadow,
+                    },
+                    Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
+                    Name::new("僵尸名称"),
+                ),
+                (
+                    Sprite::from_color(Color::srgba(0.04, 0.04, 0.04, 0.9), Vec2::new(62.0, 10.0)),
+                    Transform::from_xyz(0.0, 49.0, 4.0),
+                    Visibility::Hidden,
+                    ZombieHealthBarBackground,
+                    Name::new("僵尸血条背景"),
+                ),
+                (
+                    Sprite::from_color(Color::srgb(0.2, 0.9, 0.18), Vec2::new(58.0, 6.0)),
+                    Transform::from_xyz(0.0, 49.0, 4.1),
+                    Visibility::Hidden,
+                    ZombieHealthBarFill,
+                    Name::new("僵尸血条"),
+                ),
+                (
+                    Text2d::new(format!(
+                        "{:.0} / {:.0}",
+                        definition.health, definition.health
+                    )),
+                    TextFont {
+                        font,
+                        font_size: 12.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    Text2dShadow {
+                        offset: Vec2::new(1.0, -1.0),
+                        color: Color::BLACK,
+                    },
+                    Transform::from_xyz(0.0, 63.0, 4.2),
+                    Visibility::Hidden,
+                    ZombieHealthText,
+                    Name::new("僵尸血量数值"),
+                )
+            ],
         ));
+    }
+}
+
+/// 物理 debug 渲染开启时，同步显示僵尸的实时血量数值和血条。
+fn update_zombie_health_debug(
+    debug: Res<DebugRenderContext>,
+    zombies: Query<(&Health, &Children), With<Zombie>>,
+    mut texts: Query<(&mut Text2d, &mut Visibility), With<ZombieHealthText>>,
+    mut fills: Query<(&mut Sprite, &mut Transform, &mut Visibility), With<ZombieHealthBarFill>>,
+    mut backgrounds: Query<&mut Visibility, ZombieHealthBackgroundFilter>,
+) {
+    let visibility = if debug.enabled {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    for (health, children) in &zombies {
+        let ratio = (health.current / health.max).clamp(0.0, 1.0);
+        for child in children.iter() {
+            if let Ok((mut text, mut child_visibility)) = texts.get_mut(child) {
+                text.0 = format!("{:.0} / {:.0}", health.current, health.max);
+                *child_visibility = visibility;
+            }
+            if let Ok((mut sprite, mut transform, mut child_visibility)) = fills.get_mut(child) {
+                let width = 58.0 * ratio;
+                sprite.custom_size = Some(Vec2::new(width, 6.0));
+                sprite.color = if ratio > 0.5 {
+                    Color::srgb(0.2, 0.9, 0.18)
+                } else if ratio > 0.25 {
+                    Color::srgb(0.95, 0.72, 0.12)
+                } else {
+                    Color::srgb(0.92, 0.18, 0.12)
+                };
+                transform.translation.x = (width - 58.0) * 0.5;
+                *child_visibility = visibility;
+            }
+            if let Ok(mut child_visibility) = backgrounds.get_mut(child) {
+                *child_visibility = visibility;
+            }
+        }
     }
 }
 
