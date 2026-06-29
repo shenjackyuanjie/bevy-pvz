@@ -204,7 +204,7 @@ fn setup_hud(
                                 Button,
                                 Node {
                                     width: px(theme.card_size.x),
-                                    min_height: px(theme.card_size.y),
+                                    height: px(theme.card_size.y),
                                     padding: UiRect::axes(px(9), px(5)),
                                     border: UiRect::all(px(2)),
                                     border_radius: BorderRadius::all(px(theme.panel_radius)),
@@ -238,8 +238,8 @@ fn setup_hud(
                         .spawn((
                             Button,
                             Node {
-                                width: px(94),
-                                min_height: px(theme.card_size.y),
+                                width: px(theme.card_size.x),
+                                height: px(theme.card_size.y),
                                 padding: UiRect::axes(px(7), px(5)),
                                 border: UiRect::all(px(2)),
                                 border_radius: BorderRadius::all(px(theme.panel_radius)),

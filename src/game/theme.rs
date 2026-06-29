@@ -101,7 +101,7 @@ impl Default for UiTheme {
             result_subtitle_size: 24.0,
             panel_radius: 10.0,
             panel_gap: 6.0,
-            card_size: Vec2::new(118.0, 74.0),
+            card_size: Vec2::splat(88.0),
         }
     }
 }
