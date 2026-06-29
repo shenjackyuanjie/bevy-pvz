@@ -91,6 +91,18 @@ struct ZombieHealthBarFill;
 #[derive(Component)]
 struct ZombieHealthBarBackground;
 
+type ZombieHealthTextFilter = (
+    With<ZombieHealthText>,
+    Without<ZombieHealthBarFill>,
+    Without<ZombieHealthBarBackground>,
+);
+
+type ZombieHealthFillFilter = (
+    With<ZombieHealthBarFill>,
+    Without<ZombieHealthText>,
+    Without<ZombieHealthBarBackground>,
+);
+
 type ZombieHealthBackgroundFilter = (
     With<ZombieHealthBarBackground>,
     Without<ZombieHealthText>,
@@ -216,8 +228,8 @@ pub(crate) fn spawn_zombies(
 fn update_zombie_health_debug(
     debug: Res<DebugRenderContext>,
     zombies: Query<(&Health, &Children), With<Zombie>>,
-    mut texts: Query<(&mut Text2d, &mut Visibility), With<ZombieHealthText>>,
-    mut fills: Query<(&mut Sprite, &mut Transform, &mut Visibility), With<ZombieHealthBarFill>>,
+    mut texts: Query<(&mut Text2d, &mut Visibility), ZombieHealthTextFilter>,
+    mut fills: Query<(&mut Sprite, &mut Transform, &mut Visibility), ZombieHealthFillFilter>,
     mut backgrounds: Query<&mut Visibility, ZombieHealthBackgroundFilter>,
 ) {
     let visibility = if debug.enabled {
