@@ -499,8 +499,8 @@ fn spawn_sun_pickups(
     for request in requests.read() {
         let label = &theme.sun_label;
         // 太阳数值名牌与拾取物组成父子关系，浮动时保持同步且便于整体销毁。
-        commands.spawn((
-            Sprite::from_color(theme.sun_color, Vec2::splat(theme.sun_size)),
+        let mut sun = commands.spawn((
+            Sprite::from_color(theme.sun_color.with_alpha(0.0), Vec2::splat(theme.sun_size)),
             Transform::from_translation(request.position.extend(8.0)),
             SunPickup {
                 value: request.value,
@@ -509,7 +509,34 @@ fn spawn_sun_pickups(
             },
             LevelEntity,
             Name::new("太阳拾取物"),
-            children![(
+        ));
+        sun.with_children(|parent| {
+            for index in 0..8 {
+                let angle = index as f32 * std::f32::consts::FRAC_PI_4;
+                let offset = Vec2::from_angle(angle) * 23.0;
+                parent.spawn((
+                    Sprite::from_color(Color::srgba(1.0, 0.72, 0.05, 0.88), Vec2::new(15.0, 5.0)),
+                    Transform::from_xyz(offset.x, offset.y, 0.0)
+                        .with_rotation(Quat::from_rotation_z(angle)),
+                    Name::new("太阳光芒"),
+                ));
+            }
+            parent.spawn((
+                Sprite::from_color(Color::srgb(0.94, 0.55, 0.02), Vec2::splat(35.0)),
+                Transform::from_xyz(0.0, 0.0, 0.1),
+                Name::new("太阳外圈"),
+            ));
+            parent.spawn((
+                Sprite::from_color(theme.sun_color, Vec2::splat(27.0)),
+                Transform::from_xyz(0.0, 0.0, 0.2),
+                Name::new("太阳内核"),
+            ));
+            parent.spawn((
+                Sprite::from_color(Color::srgba(1.0, 1.0, 0.78, 0.82), Vec2::splat(8.0)),
+                Transform::from_xyz(-7.0, 7.0, 0.3),
+                Name::new("太阳高光"),
+            ));
+            parent.spawn((
                 Text2d::new(format!("太阳 +{}", request.value)),
                 TextFont {
                     font: assets.chinese_font.clone(),
@@ -525,8 +552,8 @@ fn spawn_sun_pickups(
                 },
                 Transform::from_xyz(label.offset.x, label.offset.y, 2.0),
                 Name::new("太阳数值"),
-            )],
-        ));
+            ));
+        });
     }
 }
 
