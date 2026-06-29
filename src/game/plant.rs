@@ -77,9 +77,10 @@ pub struct PlantRequest {
 /// 处理 [`PlantRequest`] 消息，在满足条件时生成植物实体。
 ///
 /// 验证条件（按顺序）：
-/// 1. 格子未被占用且在棋盘范围内
-/// 2. 该植物卡片冷却已结束（ready）
-/// 3. 太阳库存充足
+/// 1. 向日葵只能放在空中格，其他植物只能放在底层
+/// 2. 格子未被占用且在棋盘范围内
+/// 3. 该植物卡片冷却已结束（ready）
+/// 4. 太阳库存充足
 ///
 /// 条件通过后：扣除太阳、触发卡片冷却、生成精灵/碰撞体/标记组件、更新格子占用表。
 #[derive(SystemParam)]
@@ -97,7 +98,8 @@ struct PlacePlantParams<'w, 's> {
 fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantRequest>) {
     for request in requests.read() {
         let definition = params.catalog.plant(request.kind);
-        if !params.occupancy.is_available(request.cell, &params.layout)
+        if !plant_can_occupy(request.kind, request.cell)
+            || !params.occupancy.is_available(request.cell, &params.layout)
             || !params.cards.ready(request.kind)
             || !params.sun.try_spend(definition.price)
         {
@@ -183,6 +185,14 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
     }
 }
 
+/// 向日葵专用于六个空中格；战斗植物专用于底层道路。
+fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
+    match kind {
+        PlantKind::Sunflower => cell.is_elevated(),
+        _ => cell.is_ground(),
+    }
+}
+
 /// 豌豆射手行为：检测道路前方的僵尸，发射豌豆。
 ///
 /// 只有当射手的 `ActionTimer` 归零（射击间隔结束）且前方存在僵尸时才会发射。
@@ -265,4 +275,20 @@ struct Shooter {
     shots_per_burst: u8,
     remaining_burst_shots: u8,
     burst_timer: Timer,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sunflower_and_ground_plants_use_separate_rows() {
+        let ground = GridCell { column: 4, row: 0 };
+        let elevated = GridCell { column: 0, row: 2 };
+
+        assert!(!plant_can_occupy(PlantKind::Sunflower, ground));
+        assert!(plant_can_occupy(PlantKind::Sunflower, elevated));
+        assert!(plant_can_occupy(PlantKind::Peashooter, ground));
+        assert!(!plant_can_occupy(PlantKind::Peashooter, elevated));
+    }
 }

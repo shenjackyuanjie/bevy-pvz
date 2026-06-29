@@ -127,6 +127,18 @@ pub struct GridCell {
     pub row: u8,
 }
 
+impl GridCell {
+    /// 是否位于僵尸行进的底层草坪。
+    pub fn is_ground(self) -> bool {
+        self.row == 0
+    }
+
+    /// 是否位于空中种植格所在的行。
+    pub fn is_elevated(self) -> bool {
+        AIR_ROWS.contains(&self.row)
+    }
+}
+
 /// 格子占用资源，记录每个格子被哪个实体占用。
 ///
 /// 键为 [`GridCell`]，值为实体 ID。

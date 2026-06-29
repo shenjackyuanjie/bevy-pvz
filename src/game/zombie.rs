@@ -17,7 +17,7 @@ use bevy_rapier2d::prelude::*;
 use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog};
 use crate::game::combat::{ApplyDamage, DamageKind, Health, Team};
-use crate::game::lawn::LawnLayout;
+use crate::game::lawn::{GridCell, LawnLayout};
 use crate::game::physics::zombie_groups;
 use crate::game::plant::Plant;
 use crate::game::schedule::GameSet;
@@ -264,19 +264,20 @@ fn update_zombie_health_debug(
     }
 }
 
-/// 更新僵尸状态：检测道路前方的植物，切换 Walking / Eating。
+/// 更新僵尸状态：检测道路前方的底层植物，切换 Walking / Eating。
 ///
 /// 判断逻辑：检查僵尸前方距离 [-12, 62] 像素范围内是否存在植物，
 /// 取最近的植物作为啃食目标；无植物则保持 Walking。
 fn update_zombie_state(
     mut zombies: Query<(&Zombie, &Transform, &mut ZombieState)>,
-    plants: Query<(Entity, &Transform), With<Plant>>,
+    plants: Query<(Entity, &Transform, &GridCell), With<Plant>>,
 ) {
     for (zombie, zombie_transform, mut state) in &mut zombies {
         let zombie_x = zombie_transform.translation.x;
         let blocker = plants
             .iter()
-            .filter_map(|(entity, plant_transform)| {
+            .filter(|(_, _, cell)| cell.is_ground())
+            .filter_map(|(entity, plant_transform, _)| {
                 let distance = zombie_x - plant_transform.translation.x;
                 (zombie.engage_min..=zombie.engage_max)
                     .contains(&distance)
