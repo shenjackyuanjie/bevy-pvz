@@ -159,6 +159,7 @@ struct LevelConfig {
 struct LawnConfig {
     columns: u8,
     cell_size: (f32, f32),
+    center_x: f32,
     path_y: f32,
 }
 
@@ -204,7 +205,7 @@ impl LevelDefinition {
             columns: config.lawn.columns,
             cell_size,
             origin: Vec2::new(
-                -(f32::from(config.lawn.columns) * cell_size.x) * 0.5,
+                config.lawn.center_x - (f32::from(config.lawn.columns) * cell_size.x) * 0.5,
                 config.lawn.path_y - cell_size.y * 0.5,
             ),
         };

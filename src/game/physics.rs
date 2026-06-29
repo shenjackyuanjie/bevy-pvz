@@ -123,7 +123,7 @@ fn setup_physics_world(
     let board_width = layout.cell_size.x * f32::from(layout.columns);
     let center_x = layout.origin.x + board_width * 0.5;
 
-    // 地板：碰撞体顶面与草坪底边精确平齐。
+    // 地板：碰撞体顶面与草坪底边留出配置指定的垂直间距。
     commands.spawn((
         RigidBody::Fixed,
         Collider::cuboid(
@@ -137,7 +137,7 @@ fn setup_physics_world(
         world_groups(),
         Transform::from_xyz(
             center_x,
-            layout.origin.y - settings.physics_boundary_thickness,
+            layout.origin.y - settings.physics_floor_gap - settings.physics_boundary_thickness,
             0.0,
         ),
         LevelEntity,
