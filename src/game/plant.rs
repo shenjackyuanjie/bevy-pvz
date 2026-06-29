@@ -211,12 +211,15 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
     }
 }
 
-/// 向日葵专用于六个空中格；下方专用行只接受普通豌豆射手。
+/// 空中格只接受向日葵，row 0 只接受坚果/火炬，row -2 只接受豌豆/火炬。
 fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
     match kind {
         PlantKind::Sunflower => cell.is_elevated(),
-        PlantKind::Peashooter => cell.is_ground() || cell.is_peashooter_row(),
-        PlantKind::Repeater | PlantKind::GatlingPea | PlantKind::WallNut => cell.is_ground(),
+        PlantKind::Peashooter | PlantKind::Repeater | PlantKind::GatlingPea => {
+            cell.is_peashooter_row()
+        }
+        PlantKind::WallNut => cell.is_ground(),
+        PlantKind::Torchwood => cell.is_ground() || cell.is_peashooter_row(),
     }
 }
 
@@ -358,11 +361,16 @@ mod tests {
 
         assert!(!plant_can_occupy(PlantKind::Sunflower, ground));
         assert!(plant_can_occupy(PlantKind::Sunflower, elevated));
-        assert!(plant_can_occupy(PlantKind::Peashooter, ground));
+        assert!(!plant_can_occupy(PlantKind::Peashooter, ground));
         assert!(!plant_can_occupy(PlantKind::Peashooter, elevated));
         assert!(plant_can_occupy(PlantKind::Peashooter, peashooter_row));
-        assert!(!plant_can_occupy(PlantKind::Repeater, peashooter_row));
+        assert!(plant_can_occupy(PlantKind::Repeater, peashooter_row));
+        assert!(plant_can_occupy(PlantKind::GatlingPea, peashooter_row));
         assert!(!plant_can_occupy(PlantKind::WallNut, peashooter_row));
+        assert!(plant_can_occupy(PlantKind::WallNut, ground));
+        assert!(plant_can_occupy(PlantKind::Torchwood, ground));
+        assert!(plant_can_occupy(PlantKind::Torchwood, peashooter_row));
+        assert!(!plant_can_occupy(PlantKind::Torchwood, elevated));
     }
 
     #[test]

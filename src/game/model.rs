@@ -210,6 +210,101 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
                 ),
             ]);
         }
+        PlantKind::Torchwood => {
+            parts.clear();
+            parts.extend([
+                part(
+                    "树桩身体",
+                    Color::srgb(0.46, 0.21, 0.07),
+                    Vec2::new(46.0, 58.0),
+                    Vec2::new(0.0, -5.0),
+                    0.0,
+                    0.1,
+                    alpha,
+                ),
+                part(
+                    "树桩左边缘",
+                    Color::srgb(0.29, 0.11, 0.03),
+                    Vec2::new(7.0, 52.0),
+                    Vec2::new(-20.0, -4.0),
+                    -0.05,
+                    0.2,
+                    alpha,
+                ),
+                part(
+                    "树桩右边缘",
+                    Color::srgb(0.64, 0.33, 0.10),
+                    Vec2::new(6.0, 48.0),
+                    Vec2::new(19.0, -5.0),
+                    0.04,
+                    0.2,
+                    alpha,
+                ),
+                part(
+                    "树桩顶部",
+                    Color::srgb(0.72, 0.39, 0.13),
+                    Vec2::new(48.0, 12.0),
+                    Vec2::new(0.0, 24.0),
+                    0.0,
+                    0.3,
+                    alpha,
+                ),
+                part(
+                    "火焰外层",
+                    Color::srgb(0.96, 0.20, 0.03),
+                    Vec2::new(20.0, 28.0),
+                    Vec2::new(0.0, 38.0),
+                    0.0,
+                    0.2,
+                    alpha,
+                ),
+                part(
+                    "火焰内层",
+                    Color::srgb(1.0, 0.74, 0.08),
+                    Vec2::new(10.0, 20.0),
+                    Vec2::new(0.0, 35.0),
+                    0.0,
+                    0.3,
+                    alpha,
+                ),
+                part(
+                    "树桩左眼",
+                    Color::srgb(1.0, 0.86, 0.52),
+                    Vec2::new(8.0, 10.0),
+                    Vec2::new(-10.0, 5.0),
+                    0.0,
+                    0.4,
+                    alpha,
+                ),
+                part(
+                    "树桩右眼",
+                    Color::srgb(1.0, 0.86, 0.52),
+                    Vec2::new(8.0, 10.0),
+                    Vec2::new(10.0, 5.0),
+                    0.0,
+                    0.4,
+                    alpha,
+                ),
+                part(
+                    "树桩嘴",
+                    Color::srgb(0.13, 0.04, 0.01),
+                    Vec2::new(18.0, 7.0),
+                    Vec2::new(0.0, -10.0),
+                    0.0,
+                    0.4,
+                    alpha,
+                ),
+                part(
+                    "树纹",
+                    Color::srgb(0.31, 0.12, 0.03),
+                    Vec2::new(22.0, 4.0),
+                    Vec2::new(6.0, -25.0),
+                    -0.12,
+                    0.3,
+                    alpha,
+                ),
+            ]);
+        }
     }
     parts
 }

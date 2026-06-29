@@ -20,15 +20,17 @@ pub enum PlantKind {
     Repeater,
     GatlingPea,
     WallNut,
+    Torchwood,
 }
 
 impl PlantKind {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Sunflower,
         Self::Peashooter,
         Self::Repeater,
         Self::GatlingPea,
         Self::WallNut,
+        Self::Torchwood,
     ];
 }
 
@@ -302,6 +304,19 @@ impl Default for ContentCatalog {
                         size: Vec2::new(58.0, 68.0),
                     },
                     collider_half_size: Vec2::new(29.0, 34.0),
+                    behavior: PlantBehavior::Blocker,
+                },
+                PlantDefinition {
+                    kind: PlantKind::Torchwood,
+                    display_name: "火炬树桩",
+                    price: 175,
+                    card_cooldown: Duration::from_secs(5),
+                    health: 300.0,
+                    visual: UnitVisualDefinition {
+                        color: Color::srgb(0.48, 0.22, 0.07),
+                        size: Vec2::new(58.0, 72.0),
+                    },
+                    collider_half_size: Vec2::new(29.0, 36.0),
                     behavior: PlantBehavior::Blocker,
                 },
             ],

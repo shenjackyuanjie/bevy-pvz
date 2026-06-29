@@ -14,6 +14,7 @@
         (slot: 3, plant: Repeater),
         (slot: 4, plant: GatlingPea),
         (slot: 5, plant: WallNut),
+        (slot: 6, plant: Torchwood),
     ],
     waves: [
         (delay: 4.0, kind: Basic, count: 2, interval: 4.5),
