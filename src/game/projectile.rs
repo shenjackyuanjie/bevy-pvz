@@ -29,9 +29,12 @@ use crate::game::physics::physics_projectile_groups;
 use crate::game::plant::{TorchwoodFlameCollider, TorchwoodFlameZone};
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
-use crate::game::zombie::Zombie;
+use crate::game::zombie::{Zombie, ZombieKind};
 
 pub use crate::game::catalog::ProjectileKind;
+
+const FIRE_SPLASH_DAMAGE: f32 = 14.0;
+const FIRE_SPLASH_HALF_SIZE: Vec2 = Vec2::new(52.0, 36.0);
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
 pub struct ProjectilePlugin;
@@ -151,6 +154,10 @@ pub struct HitPolicy {
 #[derive(Component, Debug, Default)]
 struct HitRegistry(HashSet<Entity>);
 
+/// 记录已经穿过的火炬，防止在同一判定区内连续转换。
+#[derive(Component, Debug, Default)]
+struct TorchwoodRegistry(HashSet<Entity>);
+
 /// 生成弹丸的请求消息。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SpawnProjectile {
@@ -191,6 +198,12 @@ type IgnitableProjectileItem<'a> = (
 );
 type ProjectileFillItem<'a> = (&'a mut Mesh2d, &'a mut MeshMaterial2d<ColorMaterial>);
 type ProjectileFillFilter = (With<ProjectileFill>, Without<Projectile>);
+type ResolvedProjectileItem<'a> = (
+    &'a Projectile,
+    &'a ProjectileKind,
+    &'a mut HitPolicy,
+    &'a mut HitRegistry,
+);
 
 #[derive(SystemParam)]
 struct IgnitionParams<'w, 's> {
@@ -236,6 +249,7 @@ fn spawn_projectiles(
             request.kind,
             ProjectileRadius(definition.radius),
             HitRegistry::default(),
+            TorchwoodRegistry::default(),
             LevelEntity,
             Name::new(format!("{:?}", request.kind)),
         );
@@ -364,28 +378,38 @@ fn advance_path_step(
 
 /// 路径豌豆使用扫掠检测穿过火炬上半部，不依赖 Rapier 碰撞事件。
 fn detect_path_torchwood_ignitions(
-    projectiles: Query<
+    mut projectiles: Query<
         (
             Entity,
             &Transform,
             &PreviousPosition,
             &ProjectileRadius,
             &ProjectileKind,
+            &mut TorchwoodRegistry,
         ),
         With<PathVelocity>,
     >,
-    torchwoods: Query<(&Transform, &TorchwoodFlameZone)>,
+    torchwoods: Query<(Entity, &Transform, &TorchwoodFlameZone)>,
     mut ignitions: MessageWriter<IgniteProjectile>,
 ) {
-    for (entity, transform, previous, radius, kind) in &projectiles {
+    for (entity, transform, previous, radius, kind, mut registry) in &mut projectiles {
         if *kind == ProjectileKind::FirePea {
             continue;
         }
         let end = transform.translation.truncate();
-        if torchwoods.iter().any(|(torch_transform, zone)| {
-            let center = torch_transform.translation.truncate() + zone.offset;
-            swept_circle_hit_t(previous.0, end, center, zone.half_size, radius.0).is_some()
-        }) {
+        let crossed = torchwoods
+            .iter()
+            .find_map(|(torch, torch_transform, zone)| {
+                if registry.0.contains(&torch) {
+                    return None;
+                }
+                let center = torch_transform.translation.truncate() + zone.offset;
+                swept_circle_hit_t(previous.0, end, center, zone.half_size, radius.0)
+                    .is_some()
+                    .then_some(torch)
+            });
+        if let Some(torch) = crossed {
+            registry.0.insert(torch);
             ignitions.write(IgniteProjectile(entity));
         }
     }
@@ -394,7 +418,7 @@ fn detect_path_torchwood_ignitions(
 /// 物理豌豆只在 Rapier 报告与火炬 Sensor 实际接触时点燃。
 fn collect_physics_torchwood_collisions(
     mut collisions: MessageReader<CollisionEvent>,
-    projectiles: Query<&ProjectileMotion, With<Projectile>>,
+    mut projectiles: Query<(&ProjectileMotion, &mut TorchwoodRegistry), With<Projectile>>,
     flame_colliders: Query<(), With<TorchwoodFlameCollider>>,
     mut ignitions: MessageWriter<IgniteProjectile>,
 ) {
@@ -402,18 +426,18 @@ fn collect_physics_torchwood_collisions(
         let CollisionEvent::Started(a, b, _) = *collision else {
             continue;
         };
-        let projectile = if projectiles.get(a) == Ok(&ProjectileMotion::Physics)
-            && flame_colliders.contains(b)
-        {
-            Some(a)
-        } else if projectiles.get(b) == Ok(&ProjectileMotion::Physics)
-            && flame_colliders.contains(a)
-        {
-            Some(b)
+        let pair = if flame_colliders.contains(b) {
+            Some((a, b))
+        } else if flame_colliders.contains(a) {
+            Some((b, a))
         } else {
             None
         };
-        if let Some(projectile) = projectile {
+        if let Some((projectile, torch_collider)) = pair
+            && let Ok((motion, mut registry)) = projectiles.get_mut(projectile)
+            && *motion == ProjectileMotion::Physics
+            && registry.0.insert(torch_collider)
+        {
             ignitions.write(IgniteProjectile(projectile));
         }
     }
@@ -435,19 +459,20 @@ fn apply_projectile_ignitions(
         else {
             continue;
         };
-        if *kind == ProjectileKind::FirePea {
+        let output_kind = torchwood_output_kind(*kind);
+        if output_kind == *kind {
             continue;
         }
-        let fire_damage = params.catalog.projectile(ProjectileKind::FirePea).damage;
+        let output_damage = params.catalog.projectile(output_kind).damage;
         let render = projectile_render_assets(
-            ProjectileKind::FirePea,
+            output_kind,
             &params.catalog,
             &mut params.meshes,
             &mut params.materials,
             &mut params.render_assets,
         );
-        projectile.damage = fire_damage;
-        *kind = ProjectileKind::FirePea;
+        projectile.damage = output_damage;
+        *kind = output_kind;
         *border_mesh = Mesh2d(render.border_mesh);
         *border_material = MeshMaterial2d(render.border_material);
         for child in children.iter() {
@@ -456,6 +481,14 @@ fn apply_projectile_ignitions(
                 *fill_material = MeshMaterial2d(render.fill_material.clone());
             }
         }
+    }
+}
+
+fn torchwood_output_kind(kind: ProjectileKind) -> ProjectileKind {
+    match kind {
+        ProjectileKind::IcePea => ProjectileKind::Pea,
+        ProjectileKind::Pea | ProjectileKind::PhysicsPea => ProjectileKind::FirePea,
+        ProjectileKind::FirePea => ProjectileKind::FirePea,
     }
 }
 
@@ -534,7 +567,8 @@ fn collect_rapier_collision_events(
 fn resolve_projectile_hits(
     mut commands: Commands,
     mut hits: MessageReader<ProjectileHit>,
-    mut projectiles: Query<(&Projectile, &mut HitPolicy, &mut HitRegistry)>,
+    mut projectiles: Query<ResolvedProjectileItem<'_>>,
+    zombies: Query<(Entity, &Transform, &ZombieKind), With<Zombie>>,
     mut damage: MessageWriter<ApplyDamage>,
     mut consumed: Local<HashSet<Entity>>,
 ) {
@@ -543,7 +577,9 @@ fn resolve_projectile_hits(
         if consumed.contains(&hit.projectile) {
             continue;
         }
-        let Ok((projectile, mut policy, mut registry)) = projectiles.get_mut(hit.projectile) else {
+        let Ok((projectile, projectile_kind, mut policy, mut registry)) =
+            projectiles.get_mut(hit.projectile)
+        else {
             continue;
         };
         if !registry.0.insert(hit.target) {
@@ -558,6 +594,28 @@ fn resolve_projectile_hits(
             amount: projectile.damage,
             kind: DamageKind::Projectile,
         });
+        if *projectile_kind == ProjectileKind::FirePea
+            && let Ok((_, impact_transform, primary_kind)) = zombies.get(hit.target)
+            && fire_splash_triggers(*primary_kind)
+        {
+            let impact = impact_transform.translation.truncate();
+            for (nearby, nearby_transform, nearby_kind) in &zombies {
+                if nearby == hit.target || !fire_splash_affects(*nearby_kind) {
+                    continue;
+                }
+                let delta = nearby_transform.translation.truncate() - impact;
+                if delta.x.abs() <= FIRE_SPLASH_HALF_SIZE.x
+                    && delta.y.abs() <= FIRE_SPLASH_HALF_SIZE.y
+                {
+                    damage.write(ApplyDamage {
+                        source: projectile.owner,
+                        target: nearby,
+                        amount: FIRE_SPLASH_DAMAGE,
+                        kind: DamageKind::Projectile,
+                    });
+                }
+            }
+        }
 
         if policy.destroy_on_hit || policy.remaining_pierces == 0 {
             consumed.insert(hit.projectile);
@@ -566,6 +624,17 @@ fn resolve_projectile_hits(
             policy.remaining_pierces = policy.remaining_pierces.saturating_sub(1);
         }
     }
+}
+
+fn fire_splash_triggers(kind: ZombieKind) -> bool {
+    !matches!(kind, ZombieKind::ScreenDoor | ZombieKind::Ladder)
+}
+
+fn fire_splash_affects(kind: ZombieKind) -> bool {
+    !matches!(
+        kind,
+        ZombieKind::Newspaper | ZombieKind::ScreenDoor | ZombieKind::Ladder | ZombieKind::Zomboni
+    )
 }
 
 /// 普通路径豌豆完全飞出当前窗口后销毁；物理豌豆不参与此清理。
@@ -664,6 +733,7 @@ fn swept_circle_hit_t(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::combat::Health;
 
     #[test]
     fn swept_query_hits_even_when_endpoints_miss() {
@@ -810,5 +880,79 @@ mod tests {
                 .projectile(ProjectileKind::FirePea)
                 .damage
         );
+    }
+
+    #[test]
+    fn torchwood_turns_ice_peas_back_to_normal_peas() {
+        assert_eq!(
+            torchwood_output_kind(ProjectileKind::IcePea),
+            ProjectileKind::Pea
+        );
+        assert_eq!(
+            torchwood_output_kind(ProjectileKind::PhysicsPea),
+            ProjectileKind::FirePea
+        );
+    }
+
+    #[test]
+    fn fire_pea_deals_direct_and_small_same_lane_splash_damage() {
+        let mut app = App::new();
+        app.add_message::<ProjectileHit>()
+            .add_message::<ApplyDamage>()
+            .add_systems(
+                Update,
+                (resolve_projectile_hits, crate::game::combat::apply_damage).chain(),
+            );
+        let projectile = app
+            .world_mut()
+            .spawn((
+                Projectile {
+                    owner: Entity::PLACEHOLDER,
+                    team: Team::Plants,
+                    damage: 40.0,
+                },
+                ProjectileKind::FirePea,
+                HitPolicy {
+                    destroy_on_hit: true,
+                    remaining_pierces: 0,
+                },
+                HitRegistry::default(),
+            ))
+            .id();
+        let spawn_zombie = |world: &mut World, kind, position: Vec2| {
+            world
+                .spawn((
+                    Zombie {
+                        speed: 1.0,
+                        attack_damage: 1.0,
+                        engage_min: 0.0,
+                        engage_max: 1.0,
+                    },
+                    kind,
+                    Transform::from_translation(position.extend(0.0)),
+                    Health::new(100.0),
+                    Team::Zombies,
+                ))
+                .id()
+        };
+        let target = spawn_zombie(app.world_mut(), ZombieKind::Basic, Vec2::ZERO);
+        let nearby = spawn_zombie(app.world_mut(), ZombieKind::Conehead, Vec2::new(30.0, 0.0));
+        let newspaper = spawn_zombie(app.world_mut(), ZombieKind::Newspaper, Vec2::new(35.0, 0.0));
+        let far = spawn_zombie(
+            app.world_mut(),
+            ZombieKind::Basic,
+            Vec2::new(FIRE_SPLASH_HALF_SIZE.x + 1.0, 0.0),
+        );
+        app.world_mut()
+            .write_message(ProjectileHit { projectile, target });
+
+        app.update();
+
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 60.0);
+        assert_eq!(app.world().get::<Health>(nearby).unwrap().current, 86.0);
+        assert_eq!(app.world().get::<Health>(newspaper).unwrap().current, 100.0);
+        assert_eq!(app.world().get::<Health>(far).unwrap().current, 100.0);
+        assert!(!fire_splash_triggers(ZombieKind::ScreenDoor));
+        assert!(!fire_splash_affects(ZombieKind::Zomboni));
     }
 }
