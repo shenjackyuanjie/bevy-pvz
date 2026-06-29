@@ -17,7 +17,7 @@
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog, ProjectileMotionDefinition};
 use crate::game::combat::{ApplyDamage, DamageKind, Team};
@@ -37,7 +37,8 @@ pub struct ProjectilePlugin;
 
 impl Plugin for ProjectilePlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<SpawnProjectile>()
+        app.init_resource::<ProjectileRenderAssets>()
+            .add_message::<SpawnProjectile>()
             .add_message::<ProjectileHit>()
             .add_systems(
                 FixedUpdate,
@@ -109,6 +110,18 @@ struct PreviousPosition(Vec2);
 #[derive(Component, Debug, Clone, Copy)]
 struct ProjectileRadius(f32);
 
+#[derive(Clone)]
+struct ProjectileRenderAssetSet {
+    border_mesh: Handle<Mesh>,
+    fill_mesh: Handle<Mesh>,
+    border_material: Handle<ColorMaterial>,
+    fill_material: Handle<ColorMaterial>,
+}
+
+/// 按弹丸种类复用圆形网格与纯色材质，避免每次发射都创建永久资产。
+#[derive(Resource, Default)]
+struct ProjectileRenderAssets(HashMap<ProjectileKind, ProjectileRenderAssetSet>);
+
 /// 命中策略组件，控制弹丸命中后的行为。
 #[derive(Component, Debug)]
 pub struct HitPolicy {
@@ -148,13 +161,30 @@ pub struct ProjectileHit {
 fn spawn_projectiles(
     mut commands: Commands,
     catalog: Res<ContentCatalog>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut render_assets: ResMut<ProjectileRenderAssets>,
     mut requests: MessageReader<SpawnProjectile>,
 ) {
     for request in requests.read() {
         let definition = catalog.projectile(request.kind);
-        // 共享基础组件：精灵、变换、Projectile 核心组件和命中注册表等
+        let render = render_assets
+            .0
+            .entry(request.kind)
+            .or_insert_with(|| ProjectileRenderAssetSet {
+                border_mesh: meshes.add(Circle::new(definition.radius)),
+                fill_mesh: meshes.add(Circle::new(
+                    definition.radius - definition.visual.border_width,
+                )),
+                border_material: materials.add(definition.visual.border_color),
+                fill_material: materials.add(definition.visual.fill_color),
+            })
+            .clone();
+
+        // 共享基础组件：圆形描边、变换、Projectile 核心组件和命中注册表等
         let base = (
-            Sprite::from_color(definition.visual.color, definition.visual.size),
+            Mesh2d(render.border_mesh),
+            MeshMaterial2d(render.border_material),
             Transform::from_translation(request.origin.extend(3.0)),
             Projectile {
                 owner: request.owner,
@@ -169,45 +199,47 @@ fn spawn_projectiles(
             Name::new(format!("{:?}", request.kind)),
         );
 
-        match definition.motion {
-            ProjectileMotionDefinition::Path { velocity } => {
-                commands.spawn((
-                    base,
-                    ProjectileMotion::Path,
-                    PathVelocity(velocity),
-                    PreviousPosition(request.origin),
-                    HitPolicy {
-                        destroy_on_hit: definition.hit_policy.destroy_on_hit,
-                        remaining_pierces: definition.hit_policy.max_pierces,
-                    },
-                ));
-            }
+        let mut projectile = match definition.motion {
+            ProjectileMotionDefinition::Path { velocity } => commands.spawn((
+                base,
+                ProjectileMotion::Path,
+                PathVelocity(velocity),
+                PreviousPosition(request.origin),
+                HitPolicy {
+                    destroy_on_hit: definition.hit_policy.destroy_on_hit,
+                    remaining_pierces: definition.hit_policy.max_pierces,
+                },
+            )),
             ProjectileMotionDefinition::Physics {
                 initial_velocity,
                 gravity_scale,
                 restitution,
                 friction,
                 ccd,
-            } => {
-                commands.spawn((
-                    base,
-                    ProjectileMotion::Physics,
-                    HitPolicy {
-                        destroy_on_hit: definition.hit_policy.destroy_on_hit,
-                        remaining_pierces: definition.hit_policy.max_pierces,
-                    },
-                    RigidBody::Dynamic,
-                    Collider::ball(definition.radius),
-                    Velocity::linear(initial_velocity),
-                    Restitution::coefficient(restitution),
-                    Friction::coefficient(friction),
-                    GravityScale(gravity_scale),
-                    Ccd { enabled: ccd },
-                    ActiveEvents::COLLISION_EVENTS,
-                    physics_projectile_groups(),
-                ));
-            }
-        }
+            } => commands.spawn((
+                base,
+                ProjectileMotion::Physics,
+                HitPolicy {
+                    destroy_on_hit: definition.hit_policy.destroy_on_hit,
+                    remaining_pierces: definition.hit_policy.max_pierces,
+                },
+                RigidBody::Dynamic,
+                Collider::ball(definition.radius),
+                Velocity::linear(initial_velocity),
+                Restitution::coefficient(restitution),
+                Friction::coefficient(friction),
+                GravityScale(gravity_scale),
+                Ccd { enabled: ccd },
+                ActiveEvents::COLLISION_EVENTS,
+                physics_projectile_groups(),
+            )),
+        };
+        projectile.with_child((
+            Mesh2d(render.fill_mesh),
+            MeshMaterial2d(render.fill_material),
+            Transform::from_xyz(0.0, 0.0, 0.1),
+            Name::new("Projectile fill"),
+        ));
     }
 }
 
@@ -462,6 +494,9 @@ mod tests {
         let mut app = App::new();
         app.add_message::<SpawnProjectile>()
             .init_resource::<ContentCatalog>()
+            .init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<ColorMaterial>>()
+            .init_resource::<ProjectileRenderAssets>()
             .add_systems(Update, spawn_projectiles);
         for kind in [ProjectileKind::Pea, ProjectileKind::PhysicsPea] {
             app.world_mut().write_message(SpawnProjectile {

@@ -90,8 +90,9 @@ impl ProjectileKind {
 
 #[derive(Debug, Clone, Copy)]
 pub struct ProjectileVisualDefinition {
-    pub color: Color,
-    pub size: Vec2,
+    pub fill_color: Color,
+    pub border_color: Color,
+    pub border_width: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -211,8 +212,9 @@ impl Default for ContentCatalog {
                     damage: 20.0,
                     lifetime: Duration::from_secs(5),
                     visual: ProjectileVisualDefinition {
-                        color: Color::srgb(0.28, 0.92, 0.22),
-                        size: Vec2::splat(18.0),
+                        fill_color: Color::srgb(0.28, 0.92, 0.22),
+                        border_color: Color::srgb(0.06, 0.30, 0.05),
+                        border_width: 2.0,
                     },
                     radius: 9.0,
                     motion: ProjectileMotionDefinition::Path {
@@ -228,8 +230,9 @@ impl Default for ContentCatalog {
                     damage: 35.0,
                     lifetime: Duration::from_secs(8),
                     visual: ProjectileVisualDefinition {
-                        color: Color::srgb(0.35, 0.85, 0.95),
-                        size: Vec2::splat(18.0),
+                        fill_color: Color::srgb(0.35, 0.85, 0.95),
+                        border_color: Color::srgb(0.05, 0.28, 0.34),
+                        border_width: 2.0,
                     },
                     radius: 9.0,
                     motion: ProjectileMotionDefinition::Physics {
@@ -343,7 +346,10 @@ impl ContentCatalog {
         for projectile in &self.projectiles {
             validate_positive("projectile damage", projectile.damage)?;
             validate_positive("projectile radius", projectile.radius)?;
-            validate_size("projectile visual size", projectile.visual.size)?;
+            validate_positive("projectile border width", projectile.visual.border_width)?;
+            if projectile.visual.border_width >= projectile.radius {
+                return Err("projectile border width must be smaller than its radius".into());
+            }
             if projectile.lifetime.is_zero() {
                 return Err("projectile lifetime must be positive".into());
             }
