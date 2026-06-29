@@ -185,11 +185,12 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
     }
 }
 
-/// 向日葵专用于六个空中格；战斗植物专用于底层道路。
+/// 向日葵专用于六个空中格；下方专用行只接受普通豌豆射手。
 fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
     match kind {
         PlantKind::Sunflower => cell.is_elevated(),
-        _ => cell.is_ground(),
+        PlantKind::Peashooter => cell.is_ground() || cell.is_peashooter_row(),
+        PlantKind::Repeater | PlantKind::GatlingPea | PlantKind::WallNut => cell.is_ground(),
     }
 }
 
@@ -198,18 +199,31 @@ fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
 /// 只有当射手的 `ActionTimer` 归零（射击间隔结束）且前方存在僵尸时才会发射。
 fn fire_ready_shooters(
     time: Res<Time<Fixed>>,
-    mut shooters: Query<(Entity, &Transform, &mut Shooter, &mut ActionTimer)>,
+    layout: Res<LawnLayout>,
+    mut shooters: Query<(
+        Entity,
+        &Transform,
+        &GridCell,
+        &mut Shooter,
+        &mut ActionTimer,
+    )>,
     zombies: Query<&Transform, With<Zombie>>,
     mut spawn: MessageWriter<SpawnProjectile>,
 ) {
-    for (entity, transform, mut shooter, mut timer) in &mut shooters {
+    for (entity, transform, cell, mut shooter, mut timer) in &mut shooters {
+        let origin = shooter_projectile_origin(
+            &layout,
+            *cell,
+            transform.translation.truncate(),
+            shooter.muzzle_offset,
+        );
         timer.0.tick(time.delta());
         if shooter.remaining_burst_shots > 0 {
             shooter.burst_timer.tick(time.delta());
             if shooter.burst_timer.just_finished() {
                 spawn.write(SpawnProjectile {
                     owner: entity,
-                    origin: transform.translation.truncate() + shooter.muzzle_offset,
+                    origin,
                     kind: shooter.projectile,
                 });
                 shooter.remaining_burst_shots -= 1;
@@ -218,16 +232,30 @@ fn fire_ready_shooters(
         }
         let has_target = zombies
             .iter()
-            .any(|zombie_transform| zombie_transform.translation.x > transform.translation.x);
+            .any(|zombie_transform| zombie_transform.translation.x > origin.x);
         if has_target && timer.0.just_finished() {
             spawn.write(SpawnProjectile {
                 owner: entity,
-                origin: transform.translation.truncate() + shooter.muzzle_offset,
+                origin,
                 kind: shooter.projectile,
             });
             shooter.remaining_burst_shots = shooter.shots_per_burst - 1;
             shooter.burst_timer.reset();
         }
+    }
+}
+
+/// 专用行的弹丸直接传送到主草坪最左格；其他射手仍从自身炮口发射。
+fn shooter_projectile_origin(
+    layout: &LawnLayout,
+    cell: GridCell,
+    plant_position: Vec2,
+    muzzle_offset: Vec2,
+) -> Vec2 {
+    if cell.is_peashooter_row() {
+        layout.cell_center(GridCell { column: 0, row: 0 }) + muzzle_offset
+    } else {
+        plant_position + muzzle_offset
     }
 }
 
@@ -282,13 +310,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sunflower_and_ground_plants_use_separate_rows() {
+    fn plant_rows_enforce_their_specializations() {
         let ground = GridCell { column: 4, row: 0 };
         let elevated = GridCell { column: 0, row: 2 };
+        let peashooter_row = GridCell { column: 4, row: -2 };
 
         assert!(!plant_can_occupy(PlantKind::Sunflower, ground));
         assert!(plant_can_occupy(PlantKind::Sunflower, elevated));
         assert!(plant_can_occupy(PlantKind::Peashooter, ground));
         assert!(!plant_can_occupy(PlantKind::Peashooter, elevated));
+        assert!(plant_can_occupy(PlantKind::Peashooter, peashooter_row));
+        assert!(!plant_can_occupy(PlantKind::Repeater, peashooter_row));
+        assert!(!plant_can_occupy(PlantKind::WallNut, peashooter_row));
+    }
+
+    #[test]
+    fn lower_row_projectiles_teleport_to_the_ground_left_edge() {
+        let layout = LawnLayout::default();
+        let muzzle = Vec2::new(36.0, 12.0);
+        let lower = GridCell { column: 7, row: -2 };
+        let expected = layout.cell_center(GridCell { column: 0, row: 0 }) + muzzle;
+
+        assert_eq!(
+            shooter_projectile_origin(&layout, lower, layout.cell_center(lower), muzzle),
+            expected
+        );
     }
 }
