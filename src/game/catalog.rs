@@ -440,21 +440,28 @@ fn zombie_definition(
     display_name: &'static str,
     health: f32,
 ) -> ZombieDefinition {
+    let (speed, visual_size, collider_half_size) = match kind {
+        ZombieKind::Football => (28.0, Vec2::new(66.0, 88.0), Vec2::new(33.0, 44.0)),
+        ZombieKind::Newspaper => (20.0, Vec2::new(62.0, 82.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::ScreenDoor => (14.0, Vec2::new(72.0, 86.0), Vec2::new(36.0, 43.0)),
+        ZombieKind::Zomboni => (12.0, Vec2::new(92.0, 64.0), Vec2::new(46.0, 32.0)),
+        _ => (17.0, Vec2::new(58.0, 82.0), Vec2::new(29.0, 41.0)),
+    };
     ZombieDefinition {
         kind,
         display_name,
         scene_label: "僵尸",
         health,
-        speed: 17.0,
+        speed,
         attack_damage: 20.0,
         attack_interval: Duration::from_secs(1),
         engage_range: -12.0..=62.0,
         spawn_offset_x: 75.0,
         visual: UnitVisualDefinition {
             color: Color::srgb(0.42, 0.48, 0.38),
-            size: Vec2::new(58.0, 82.0),
+            size: visual_size,
         },
-        collider_half_size: Vec2::new(29.0, 41.0),
+        collider_half_size,
     }
 }
 

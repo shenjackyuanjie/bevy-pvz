@@ -588,10 +588,12 @@ fn resolve_projectile_hits(
         if projectile.team != Team::Plants {
             continue;
         }
+        let primary_kind = zombies.get(hit.target).ok().map(|(_, _, kind)| *kind);
+        let direct_damage = fire_direct_damage(projectile.damage, *projectile_kind, primary_kind);
         damage.write(ApplyDamage {
             source: projectile.owner,
             target: hit.target,
-            amount: projectile.damage,
+            amount: direct_damage,
             kind: DamageKind::Projectile,
         });
         if *projectile_kind == ProjectileKind::FirePea
@@ -628,6 +630,18 @@ fn resolve_projectile_hits(
 
 fn fire_splash_triggers(kind: ZombieKind) -> bool {
     !matches!(kind, ZombieKind::ScreenDoor | ZombieKind::Ladder)
+}
+
+fn fire_direct_damage(
+    base_damage: f32,
+    projectile: ProjectileKind,
+    target: Option<ZombieKind>,
+) -> f32 {
+    if projectile == ProjectileKind::FirePea && target == Some(ZombieKind::Newspaper) {
+        base_damage * 2.0
+    } else {
+        base_damage
+    }
 }
 
 fn fire_splash_affects(kind: ZombieKind) -> bool {
@@ -954,5 +968,9 @@ mod tests {
         assert_eq!(app.world().get::<Health>(far).unwrap().current, 100.0);
         assert!(!fire_splash_triggers(ZombieKind::ScreenDoor));
         assert!(!fire_splash_affects(ZombieKind::Zomboni));
+        assert_eq!(
+            fire_direct_damage(40.0, ProjectileKind::FirePea, Some(ZombieKind::Newspaper)),
+            80.0
+        );
     }
 }
