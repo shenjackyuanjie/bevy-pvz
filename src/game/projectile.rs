@@ -15,8 +15,8 @@
 //! - `Combat`：弹丸命中解析，发出 [`ApplyDamage`](crate::game::combat::ApplyDamage)
 //! - `DeathAndCleanup`：普通路径弹丸完全飞出窗口后销毁
 
-use bevy::prelude::*;
 use bevy::window::PrimaryWindow;
+use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
 
@@ -181,6 +181,26 @@ pub struct ProjectileHit {
 
 #[derive(Message, Debug, Clone, Copy)]
 struct IgniteProjectile(Entity);
+
+type IgnitableProjectileItem<'a> = (
+    &'a mut Projectile,
+    &'a mut ProjectileKind,
+    &'a mut Mesh2d,
+    &'a mut MeshMaterial2d<ColorMaterial>,
+    &'a Children,
+);
+type ProjectileFillItem<'a> = (&'a mut Mesh2d, &'a mut MeshMaterial2d<ColorMaterial>);
+type ProjectileFillFilter = (With<ProjectileFill>, Without<Projectile>);
+
+#[derive(SystemParam)]
+struct IgnitionParams<'w, 's> {
+    catalog: Res<'w, ContentCatalog>,
+    meshes: ResMut<'w, Assets<Mesh>>,
+    materials: ResMut<'w, Assets<ColorMaterial>>,
+    render_assets: ResMut<'w, ProjectileRenderAssets>,
+    projectiles: Query<'w, 's, IgnitableProjectileItem<'static>>,
+    fills: Query<'w, 's, ProjectileFillItem<'static>, ProjectileFillFilter>,
+}
 
 /// 消费 [`SpawnProjectile`] 消息，创建对应的弹丸实体。
 ///
@@ -402,21 +422,7 @@ fn collect_physics_torchwood_collisions(
 /// 统一将点燃的豌豆切换为火焰伤害和红色系材质，保留原运动管线。
 fn apply_projectile_ignitions(
     mut ignitions: MessageReader<IgniteProjectile>,
-    catalog: Res<ContentCatalog>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut render_assets: ResMut<ProjectileRenderAssets>,
-    mut projectiles: Query<(
-        &mut Projectile,
-        &mut ProjectileKind,
-        &mut Mesh2d,
-        &mut MeshMaterial2d<ColorMaterial>,
-        &Children,
-    )>,
-    mut fills: Query<
-        (&mut Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
-        (With<ProjectileFill>, Without<Projectile>),
-    >,
+    mut params: IgnitionParams,
     mut converted: Local<HashSet<Entity>>,
 ) {
     converted.clear();
@@ -425,27 +431,27 @@ fn apply_projectile_ignitions(
             continue;
         }
         let Ok((mut projectile, mut kind, mut border_mesh, mut border_material, children)) =
-            projectiles.get_mut(request.0)
+            params.projectiles.get_mut(request.0)
         else {
             continue;
         };
         if *kind == ProjectileKind::FirePea {
             continue;
         }
-        let fire = catalog.projectile(ProjectileKind::FirePea);
+        let fire_damage = params.catalog.projectile(ProjectileKind::FirePea).damage;
         let render = projectile_render_assets(
             ProjectileKind::FirePea,
-            &catalog,
-            &mut meshes,
-            &mut materials,
-            &mut render_assets,
+            &params.catalog,
+            &mut params.meshes,
+            &mut params.materials,
+            &mut params.render_assets,
         );
-        projectile.damage = fire.damage;
+        projectile.damage = fire_damage;
         *kind = ProjectileKind::FirePea;
         *border_mesh = Mesh2d(render.border_mesh);
         *border_material = MeshMaterial2d(render.border_material);
         for child in children.iter() {
-            if let Ok((mut fill_mesh, mut fill_material)) = fills.get_mut(child) {
+            if let Ok((mut fill_mesh, mut fill_material)) = params.fills.get_mut(child) {
                 *fill_mesh = Mesh2d(render.fill_mesh.clone());
                 *fill_material = MeshMaterial2d(render.fill_material.clone());
             }

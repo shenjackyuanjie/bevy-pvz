@@ -48,6 +48,9 @@ struct LawnMower {
     state: MowerState,
 }
 
+type LivingZombieFilter = (With<Zombie>, Without<Dead>);
+type MowerTarget<'a> = (Entity, &'a Transform, &'a Health);
+
 fn setup_home_defenses(mut commands: Commands, layout: Res<LawnLayout>) {
     commands.spawn((
         Transform::from_xyz(layout.origin.x - 82.0, layout.path_y() + 132.0, -8.0),
@@ -167,7 +170,7 @@ fn advance_lawn_mower(
 
 fn lawn_mower_hits_zombies(
     mowers: Query<(Entity, &LawnMower, &Transform)>,
-    zombies: Query<(Entity, &Transform, &Health), (With<Zombie>, Without<Dead>)>,
+    zombies: Query<MowerTarget<'_>, LivingZombieFilter>,
     mut damage: MessageWriter<ApplyDamage>,
 ) {
     for (mower_entity, mower, mower_transform) in &mowers {
