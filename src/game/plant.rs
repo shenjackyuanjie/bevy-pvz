@@ -131,6 +131,15 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
         let label = &params.theme.plant_label;
         let font = params.assets.chinese_font.clone();
         let model_parts = plant_model_parts(request.kind, 1.0);
+        let model_facing = if request.cell.is_peashooter_row()
+            && matches!(
+                request.kind,
+                PlantKind::Peashooter | PlantKind::Repeater | PlantKind::GatlingPea
+            ) {
+            -1.0
+        } else {
+            1.0
+        };
         // 透明根节点承担碰撞与逻辑，子级色块组成植物轮廓。
         let mut entity = params.commands.spawn((
             Sprite::from_color(
@@ -157,8 +166,8 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
             for part in model_parts {
                 parent.spawn((
                     Sprite::from_color(part.color, part.size),
-                    Transform::from_xyz(part.offset.x, part.offset.y, part.z)
-                        .with_rotation(Quat::from_rotation_z(part.rotation)),
+                    Transform::from_xyz(part.offset.x * model_facing, part.offset.y, part.z)
+                        .with_rotation(Quat::from_rotation_z(part.rotation * model_facing)),
                     Name::new(part.name),
                 ));
             }
