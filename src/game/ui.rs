@@ -18,6 +18,9 @@ use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
 use crate::game::zombie::Zombie;
 
+mod results;
+use results::{cleanup_result, show_defeat, show_victory};
+
 /// 游戏 UI 插件，注册 HUD 初始化/更新、结果画面显示与清理系统。
 pub struct GameUiPlugin;
 
@@ -680,90 +683,6 @@ fn update_zombie_progress(
     label.0 = format!("僵尸进度  剩余 {remaining} / {total}");
 }
 
-/// 显示中文胜利结果页。
-fn show_victory(
-    mut commands: Commands,
-    assets: Res<GameAssets>,
-    controls: Res<ControlBindings>,
-    theme: Res<UiTheme>,
-) {
-    show_result(
-        &mut commands,
-        &assets,
-        "胜利",
-        &format!("草坪守住了！按 {} 再来一局", key_label(controls.restart)),
-        theme.victory_text,
-        &theme,
-    );
-}
-
-/// 显示中文失败结果页。
-fn show_defeat(
-    mut commands: Commands,
-    assets: Res<GameAssets>,
-    controls: Res<ControlBindings>,
-    theme: Res<UiTheme>,
-) {
-    show_result(
-        &mut commands,
-        &assets,
-        "失败",
-        &format!(
-            "僵尸突破了防线。按 {} 重新开始",
-            key_label(controls.restart)
-        ),
-        theme.defeat_text,
-        &theme,
-    );
-}
-
-/// 构造覆盖整个窗口的结果遮罩，胜利和失败复用相同布局。
-fn show_result(
-    commands: &mut Commands,
-    assets: &GameAssets,
-    title: &str,
-    subtitle: &str,
-    color: Color,
-    theme: &UiTheme,
-) {
-    let font = assets.chinese_font.clone();
-    commands.spawn((
-        Node {
-            width: percent(100),
-            height: percent(100),
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            flex_direction: FlexDirection::Column,
-            row_gap: px(18),
-            ..default()
-        },
-        BackgroundColor(theme.result_background),
-        ZIndex(100),
-        ResultEntity,
-        Name::new("游戏结果"),
-        children![
-            (
-                Text::new(title),
-                TextFont {
-                    font: font.clone(),
-                    font_size: theme.result_title_size,
-                    ..default()
-                },
-                TextColor(color),
-            ),
-            (
-                Text::new(subtitle),
-                TextFont {
-                    font,
-                    font_size: theme.result_subtitle_size,
-                    ..default()
-                },
-                TextColor(theme.result_subtitle),
-            )
-        ],
-    ));
-}
-
 fn control_help(controls: &ControlBindings) -> String {
     let text = format!(
         "操作说明\n按住植物卡片并拖到草坪  种植\n按住铲子并拖到植物  铲除\n{}  收集太阳\n{}  暂停 / 继续\n{}  重新开始",
@@ -783,12 +702,5 @@ fn control_help(controls: &ControlBindings) -> String {
     #[cfg(not(feature = "debug_tools"))]
     {
         text
-    }
-}
-
-/// 离开结果状态时移除遮罩，确保重新开局不会残留旧界面。
-fn cleanup_result(mut commands: Commands, results: Query<Entity, With<ResultEntity>>) {
-    for entity in &results {
-        commands.entity(entity).despawn();
     }
 }
