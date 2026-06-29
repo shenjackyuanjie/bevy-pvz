@@ -18,7 +18,12 @@ pub struct GameUiPlugin;
 impl Plugin for GameUiPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(GameState::Playing), setup_hud)
-            .add_systems(Update, update_hud.run_if(in_state(GameState::Playing)))
+            .add_systems(
+                Update,
+                (select_plant_card_from_ui, update_hud)
+                    .chain()
+                    .run_if(in_state(GameState::Playing)),
+            )
             .add_systems(OnEnter(GameState::Victory), show_victory)
             .add_systems(OnEnter(GameState::Defeat), show_defeat)
             .add_systems(OnExit(GameState::Victory), cleanup_result)
@@ -149,9 +154,9 @@ fn setup_hud(
                     for card_definition in &definition.cards {
                         let kind = card_definition.plant;
                         let plant = catalog.plant(kind);
-                        let key = key_label(card_definition.key);
                         cards
                             .spawn((
+                                Button,
                                 Node {
                                     width: px(theme.card_size.x),
                                     min_height: px(theme.card_size.y),
@@ -169,7 +174,7 @@ fn setup_hud(
                             .with_children(|card| {
                                 card.spawn((
                                     Text::new(format!(
-                                        "  [{key}] {}\n      {} 太阳  ·  可种植",
+                                        "  {}\n      {} 太阳  ·  点击选择",
                                         plant.display_name, plant.price
                                     )),
                                     TextFont {
@@ -203,7 +208,7 @@ fn setup_hud(
             ))
             .with_children(|panel| {
                 panel.spawn((
-                    Text::new(control_help(&definition, &controls)),
+                    Text::new(control_help(&controls)),
                     TextFont {
                         font: font.clone(),
                         font_size: theme.help_font_size,
@@ -214,6 +219,19 @@ fn setup_hud(
                 ));
             });
         });
+}
+
+/// 点击植物卡片时切换当前选择。卡片即使暂时无法种植，也允许预先选择。
+fn select_plant_card_from_ui(
+    cards: Query<(&Interaction, &PlantCardPanel), Changed<Interaction>>,
+    mut selected: ResMut<SelectedPlant>,
+) {
+    for (interaction, card) in &cards {
+        if *interaction == Interaction::Pressed {
+            selected.0 = card.0;
+            break;
+        }
+    }
 }
 
 /// 刷新关卡统计和三张卡片的选中、余额及冷却视觉状态。
@@ -227,16 +245,10 @@ fn update_hud(mut params: HudParams) {
         params.runtime.elapsed.as_secs_f32(),
     );
 
-    // 卡片文字同时说明快捷键、价格和当前不可用原因。
+    // 卡片文字说明价格和当前不可用原因。
     for (label, mut text, mut color) in &mut params.labels {
         let kind = label.0;
         let plant = params.catalog.plant(kind);
-        let card = params
-            .definition
-            .cards
-            .iter()
-            .find(|card| card.plant == kind)
-            .expect("validated card");
         let remaining = params.cards.remaining(kind).as_secs_f32();
         let state = if remaining > 0.0 {
             format!("冷却 {remaining:.1} 秒")
@@ -251,10 +263,8 @@ fn update_hud(mut params: HudParams) {
             " "
         };
         text.0 = format!(
-            "{marker} [{}] {}\n      {} 太阳  ·  {state}",
-            key_label(card.key),
-            plant.display_name,
-            plant.price,
+            "{marker} {}\n      {} 太阳  ·  {state}",
+            plant.display_name, plant.price,
         );
         color.0 = if params.selected.0 == kind {
             params.theme.card_selected_text
@@ -370,15 +380,9 @@ fn show_result(
     ));
 }
 
-fn control_help(definition: &LevelDefinition, controls: &ControlBindings) -> String {
-    let card_keys = definition
-        .cards
-        .iter()
-        .map(|card| key_label(card.key))
-        .collect::<Vec<_>>()
-        .join(" / ");
+fn control_help(controls: &ControlBindings) -> String {
     let text = format!(
-        "操作说明\n{card_keys}  选择植物\n{}  放置植物 / 收集太阳\n{}  重新开始",
+        "操作说明\n点击植物卡片  选择植物\n{}  放置植物 / 收集太阳\n{}  重新开始",
         mouse_label(controls.place_or_collect),
         key_label(controls.restart),
     );
