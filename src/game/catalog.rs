@@ -240,8 +240,8 @@ impl Default for ContentCatalog {
                         ccd: true,
                     },
                     hit_policy: HitPolicyDefinition {
-                        destroy_on_hit: false,
-                        max_pierces: u8::MAX,
+                        destroy_on_hit: true,
+                        max_pierces: 0,
                     },
                 },
             ],

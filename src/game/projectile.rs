@@ -6,7 +6,7 @@
 //!   命中即销毁。速度为恒定线性。
 //!
 //! - **物理弹丸（PhysicsPea）**：拥有 Rapier2D 刚体和碰撞体，受重力影响，
-//!   可弹跳、穿透多个目标，与物理世界边界交互。
+//!   可在地板和墙面弹跳，命中僵尸后造成伤害并销毁。
 //!
 //! 调度阶段：
 //! - `Spawn`：消费 [`SpawnProjectile`] 消息，根据种类创建弹丸实体
@@ -123,9 +123,9 @@ struct ProjectileRenderAssets(HashMap<ProjectileKind, ProjectileRenderAssetSet>)
 /// 命中策略组件，控制弹丸命中后的行为。
 #[derive(Component, Debug)]
 pub struct HitPolicy {
-    /// 命中时是否立即销毁（普通豌豆为 true，物理豌豆为 false）。
+    /// 命中时是否立即销毁。
     pub destroy_on_hit: bool,
-    /// 剩余可穿透目标数（物理豌豆可多次穿透，用 `u8::MAX` 表示无限）。
+    /// 剩余可穿透目标数，用 `u8::MAX` 表示无限。
     pub remaining_pierces: u8,
 }
 
@@ -331,8 +331,13 @@ fn resolve_projectile_hits(
     mut hits: MessageReader<ProjectileHit>,
     mut projectiles: Query<(&Projectile, &mut HitPolicy, &mut HitRegistry)>,
     mut damage: MessageWriter<ApplyDamage>,
+    mut consumed: Local<HashSet<Entity>>,
 ) {
+    consumed.clear();
     for hit in hits.read() {
+        if consumed.contains(&hit.projectile) {
+            continue;
+        }
         let Ok((projectile, mut policy, mut registry)) = projectiles.get_mut(hit.projectile) else {
             continue;
         };
@@ -350,6 +355,7 @@ fn resolve_projectile_hits(
         });
 
         if policy.destroy_on_hit || policy.remaining_pierces == 0 {
+            consumed.insert(hit.projectile);
             commands.entity(hit.projectile).despawn();
         } else if policy.remaining_pierces != u8::MAX {
             policy.remaining_pierces = policy.remaining_pierces.saturating_sub(1);
