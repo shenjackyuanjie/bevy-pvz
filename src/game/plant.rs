@@ -81,6 +81,11 @@ struct ActionTimer(Timer);
 #[derive(Component, Debug)]
 struct PlantNameText;
 
+#[derive(Component, Debug)]
+struct WallNutHealthText;
+
+type PlantDebugTextFilter = Or<(With<PlantNameText>, With<WallNutHealthText>)>;
+
 /// 放置植物的请求消息。
 ///
 /// 由植物拖拽结束系统发送，
@@ -173,7 +178,7 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
             parent.spawn((
                 Text2d::new(definition.display_name),
                 TextFont {
-                    font,
+                    font: font.clone(),
                     font_size: label.font_size,
                     ..default()
                 },
@@ -185,6 +190,24 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
                 PlantNameText,
                 Name::new("植物名称"),
             ));
+            if request.kind == PlantKind::WallNut {
+                parent.spawn((
+                    Text2d::new(format!(
+                        "{:.0} / {:.0}",
+                        definition.health, definition.health
+                    )),
+                    TextFont {
+                        font,
+                        font_size: 9.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                    Transform::from_xyz(0.0, 42.0, 4.0),
+                    Visibility::Hidden,
+                    WallNutHealthText,
+                    Name::new("坚果血量数值"),
+                ));
+            }
         });
 
         match definition.behavior {
@@ -257,15 +280,26 @@ fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
 /// 物理 debug 渲染开启时，显示植物名称标签。
 fn update_plant_debug_visibility(
     debug: Res<DebugRenderContext>,
-    mut texts: Query<&mut Visibility, With<PlantNameText>>,
+    plants: Query<(&Health, &Children), With<Plant>>,
+    mut texts: Query<
+        (&mut Text2d, &mut Visibility, Option<&WallNutHealthText>),
+        PlantDebugTextFilter,
+    >,
 ) {
     let visibility = if debug.enabled {
         Visibility::Visible
     } else {
         Visibility::Hidden
     };
-    for mut v in &mut texts {
-        *v = visibility;
+    for (health, children) in &plants {
+        for child in children.iter() {
+            if let Ok((mut text, mut child_visibility, wall_nut_health)) = texts.get_mut(child) {
+                if wall_nut_health.is_some() {
+                    text.0 = format!("{:.0} / {:.0}", health.current, health.max);
+                }
+                *child_visibility = visibility;
+            }
+        }
     }
 }
 
@@ -335,7 +369,7 @@ fn shooter_projectile_route(
 ) -> (Vec2, ProjectileRoute) {
     if cell.is_peashooter_row() {
         (
-            plant_position + muzzle_offset,
+            plant_position + Vec2::new(-muzzle_offset.x, muzzle_offset.y),
             ProjectileRoute::LeftEdgePortal {
                 trigger_x: layout.origin.x,
                 exit: Vec2::new(layout.origin.x, layout.path_y() + muzzle_offset.y),
@@ -424,7 +458,7 @@ mod tests {
         let plant_position = layout.cell_center(lower);
         let (origin, route) = shooter_projectile_route(&layout, lower, plant_position, muzzle);
 
-        assert_eq!(origin, plant_position + muzzle);
+        assert_eq!(origin, plant_position + Vec2::new(-muzzle.x, muzzle.y));
         assert_eq!(
             route,
             ProjectileRoute::LeftEdgePortal {
