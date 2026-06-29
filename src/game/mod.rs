@@ -13,6 +13,7 @@ pub mod catalog;
 pub mod combat;
 pub mod config;
 pub mod controls;
+pub mod defense;
 pub mod lawn;
 pub mod level;
 pub mod model;
@@ -34,6 +35,7 @@ use crate::game::controls::ControlBindings;
 use crate::game::theme::UiTheme;
 
 use crate::game::combat::CombatPlugin;
+use crate::game::defense::HomeDefensePlugin;
 use crate::game::lawn::LawnPlugin;
 use crate::game::level::LevelPlugin;
 use crate::game::physics::{GamePhysicsPlugin, PhysicsDebugSettings};
@@ -75,6 +77,7 @@ impl Plugin for GamePlugin {
             .add_plugins((
                 GamePhysicsPlugin,
                 LawnPlugin,
+                HomeDefensePlugin,
                 CombatPlugin,
                 ProjectilePlugin,
                 PlantPlugin,

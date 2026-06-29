@@ -77,6 +77,8 @@ pub enum DamageKind {
     Projectile,
     /// 啃食伤害（僵尸攻击）。
     Bite,
+    /// 草坪小推车碾压。
+    Mower,
 }
 
 /// 伤害请求消息。
