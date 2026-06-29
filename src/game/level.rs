@@ -575,7 +575,6 @@ fn handle_world_clicks(mut params: WorldClickParams) {
     }) {
         params.bank.amount += pickup.value;
         params.commands.entity(entity).despawn();
-        return;
     }
 }
 
