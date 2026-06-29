@@ -130,6 +130,10 @@ fn setup_physics_world(
             board_width * settings.physics_floor_half_width_scale,
             settings.physics_boundary_thickness,
         ),
+        Friction {
+            coefficient: settings.physics_floor_friction,
+            combine_rule: CoefficientCombineRule::Min,
+        },
         world_groups(),
         Transform::from_xyz(
             center_x,
