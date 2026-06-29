@@ -35,6 +35,12 @@ pub const WORLD_BOUNDARY_GROUP: Group = Group::GROUP_5;
 /// 割草机碰撞组。
 pub const MOWER_GROUP: Group = Group::GROUP_6;
 
+/// 物理碰撞体调试渲染的启动配置。
+#[derive(Resource, Debug, Default, Clone, Copy)]
+pub struct PhysicsDebugSettings {
+    pub enabled: bool,
+}
+
 /// 物理引擎插件。
 ///
 /// 配置 Rapier2D 物理管线（100 像素/米，固定在 FixedUpdate 调度中运行），
@@ -62,10 +68,19 @@ impl Plugin for GamePhysicsPlugin {
         .add_systems(
             OnEnter(GameState::Playing),
             setup_physics_world.after(LevelSetupSet::Reset),
-        );
+        )
+        .add_systems(Startup, apply_initial_physics_debug);
         #[cfg(feature = "debug_tools")]
         app.add_systems(Update, toggle_physics_debug);
     }
+}
+
+/// 将命令行启动配置应用到 Rapier 调试渲染上下文。
+fn apply_initial_physics_debug(
+    settings: Res<PhysicsDebugSettings>,
+    mut debug: ResMut<DebugRenderContext>,
+) {
+    debug.enabled = settings.enabled;
 }
 
 /// 创建植物的碰撞组过滤配置。

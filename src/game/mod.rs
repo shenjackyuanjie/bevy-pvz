@@ -35,7 +35,7 @@ use crate::game::theme::UiTheme;
 use crate::game::combat::CombatPlugin;
 use crate::game::lawn::LawnPlugin;
 use crate::game::level::LevelPlugin;
-use crate::game::physics::GamePhysicsPlugin;
+use crate::game::physics::{GamePhysicsPlugin, PhysicsDebugSettings};
 use crate::game::plant::PlantPlugin;
 use crate::game::projectile::ProjectilePlugin;
 use crate::game::schedule::GameSet;
@@ -55,6 +55,7 @@ impl Plugin for GamePlugin {
             .init_resource::<ContentCatalog>()
             .init_resource::<GameplaySettings>()
             .init_resource::<ControlBindings>()
+            .init_resource::<PhysicsDebugSettings>()
             .init_resource::<UiTheme>()
             .init_resource::<GameAssets>()
             .insert_resource(Time::<Fixed>::from_hz(60.0))
