@@ -17,19 +17,53 @@
         (slot: 6, plant: Torchwood),
     ],
     waves: [
-        (delay: 5.0, kind: Basic, count: 2, interval: 6.0),
-        (delay: 8.0, kind: Basic, count: 3, interval: 5.5),
-        (delay: 7.0, kind: Conehead, count: 1, interval: 1.0),
-        (delay: 8.0, kind: Basic, count: 3, interval: 5.2),
-        (delay: 8.0, kind: Basic, count: 4, interval: 5.0),
-        (delay: 7.0, kind: Newspaper, count: 1, interval: 1.0),
-        (delay: 8.0, kind: Basic, count: 4, interval: 4.8),
-        (delay: 7.0, kind: ScreenDoor, count: 1, interval: 1.0),
-        (delay: 8.0, kind: Basic, count: 5, interval: 4.6),
-        (delay: 7.0, kind: Buckethead, count: 1, interval: 1.0),
-        (delay: 8.0, kind: Basic, count: 5, interval: 4.4),
-        (delay: 7.0, kind: Football, count: 1, interval: 1.0),
-        (delay: 8.0, kind: Basic, count: 6, interval: 4.2),
-        (delay: 8.0, kind: Zomboni, count: 1, interval: 1.0),
+        // ========== 前期：热身 (waves 1-5) ==========
+        (delay: 8.0, kind: Basic, count: 3, interval: 3.5),
+        (delay: 10.0, kind: Basic, count: 4, interval: 3.0),
+        (delay: 9.0, kind: Conehead, count: 2, interval: 1.8),
+        (delay: 10.0, kind: Basic, count: 5, interval: 2.5),
+        (delay: 9.0, kind: PoleVaulting, count: 2, interval: 1.0),
+
+        // ========== 中期：加温 (waves 6-10) ==========
+        (delay: 10.0, kind: Basic, count: 5, interval: 2.5),
+        (delay: 8.0, kind: Conehead, count: 3, interval: 1.5),
+        (delay: 8.0, kind: Newspaper, count: 2, interval: 1.0),
+        (delay: 10.0, kind: ScreenDoor, count: 2, interval: 1.5),
+        (delay: 9.0, kind: Buckethead, count: 2, interval: 1.5),
+
+        // ========== 中后期：上强度 (waves 11-15) ==========
+        (delay: 10.0, kind: Basic, count: 6, interval: 2.0),
+        (delay: 8.0, kind: Conehead, count: 3, interval: 1.2),
+        (delay: 8.0, kind: ScreenDoor, count: 2, interval: 1.0),
+        (delay: 12.0, kind: Football, count: 3, interval: 1.0),
+        (delay: 10.0, kind: Zomboni, count: 2, interval: 1.5),
+
+        // ========== 后期：开始坐牢 (waves 16-20) ==========
+        (delay: 10.0, kind: Buckethead, count: 4, interval: 1.0),
+        (delay: 8.0, kind: JackInTheBox, count: 2, interval: 1.0),
+        (delay: 8.0, kind: Balloon, count: 2, interval: 1.0),
+        (delay: 12.0, kind: Football, count: 4, interval: 1.0),
+        (delay: 10.0, kind: Gargantuar, count: 1, interval: 1.0),
+
+        // ========== 大后期：地狱模式 (waves 21-25) ==========
+        (delay: 10.0, kind: Catapult, count: 2, interval: 1.2),
+        (delay: 8.0, kind: Digger, count: 2, interval: 1.0),
+        (delay: 8.0, kind: Pogo, count: 2, interval: 1.0),
+        (delay: 8.0, kind: Imp, count: 3, interval: 0.6),
+        (delay: 12.0, kind: Gargantuar, count: 2, interval: 2.0),
+
+        // ========== 终极冲锋 (waves 26-30) ==========
+        (delay: 8.0, kind: Imp, count: 4, interval: 0.6),
+        (delay: 10.0, kind: Football, count: 5, interval: 0.8),
+        (delay: 8.0, kind: JackInTheBox, count: 2, interval: 0.8),
+        (delay: 12.0, kind: Gargantuar, count: 2, interval: 1.5),
+        (delay: 10.0, kind: Zomboni, count: 3, interval: 1.0),
+
+        // ========== 最终波：尸潮 (waves 31-35) ==========
+        (delay: 12.0, kind: Gargantuar, count: 2, interval: 1.2),
+        (delay: 8.0, kind: Imp, count: 4, interval: 0.5),
+        (delay: 10.0, kind: Catapult, count: 3, interval: 1.0),
+        (delay: 10.0, kind: Football, count: 4, interval: 0.7),
+        (delay: 12.0, kind: GigaGargantuar, count: 1, interval: 1.0),
     ],
 )
