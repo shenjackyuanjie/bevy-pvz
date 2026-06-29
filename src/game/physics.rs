@@ -114,7 +114,7 @@ fn world_groups() -> CollisionGroups {
 
 /// 在 Playing 状态进入时创建物理世界边界实体。
 ///
-/// 包括一个棋盘下方的地板（让物理豌豆有空间弧形弹跳）和左右两侧的侧墙。
+/// 包括一个顶面与草坪底边齐平的地板，以及左右两侧的侧墙。
 fn setup_physics_world(
     mut commands: Commands,
     layout: Res<LawnLayout>,
@@ -123,7 +123,7 @@ fn setup_physics_world(
     let board_width = layout.cell_size.x * f32::from(layout.columns);
     let center_x = layout.origin.x + board_width * 0.5;
 
-    // 地板：碰撞体顶面与草坪底边留出配置指定的垂直间距。
+    // Collider::cuboid 使用半高，因此中心下移一个 thickness 后顶面正好对齐草坪底边。
     commands.spawn((
         RigidBody::Fixed,
         Collider::cuboid(
@@ -137,7 +137,7 @@ fn setup_physics_world(
         world_groups(),
         Transform::from_xyz(
             center_x,
-            layout.origin.y - settings.physics_floor_gap - settings.physics_boundary_thickness,
+            layout.origin.y - settings.physics_boundary_thickness,
             0.0,
         ),
         LevelEntity,

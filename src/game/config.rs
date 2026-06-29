@@ -8,7 +8,6 @@ pub struct GameplaySettings {
     pub defeat_offset_x: f32,
     pub physics_side_margins: Vec2,
     pub physics_boundary_thickness: f32,
-    pub physics_floor_gap: f32,
     pub physics_floor_friction: f32,
     pub physics_wall_half_height: f32,
     pub physics_floor_half_width_scale: f32,
@@ -21,8 +20,7 @@ impl Default for GameplaySettings {
             defeat_offset_x: 16.0,
             physics_side_margins: Vec2::new(120.0, 220.0),
             physics_boundary_thickness: 10.0,
-            physics_floor_gap: 50.0,
-            physics_floor_friction: 0.12,
+            physics_floor_friction: 0.65,
             physics_wall_half_height: 400.0,
             physics_floor_half_width_scale: 0.75,
         }
@@ -40,7 +38,6 @@ impl GameplaySettings {
                 "physics_boundary_thickness",
                 self.physics_boundary_thickness,
             ),
-            ("physics_floor_gap", self.physics_floor_gap),
             ("physics_floor_friction", self.physics_floor_friction),
             ("physics_wall_half_height", self.physics_wall_half_height),
             (

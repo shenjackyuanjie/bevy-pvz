@@ -285,7 +285,7 @@ impl Default for ContentCatalog {
                     motion: ProjectileMotionDefinition::Physics {
                         initial_velocity: Vec2::new(330.0, 300.0),
                         gravity_scale: 1.0,
-                        restitution: 0.72,
+                        restitution: 0.45,
                         friction: 0.35,
                         ccd: true,
                     },
