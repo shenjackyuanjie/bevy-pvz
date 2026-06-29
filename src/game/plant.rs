@@ -18,7 +18,7 @@ use crate::game::combat::{Dead, Health, Team};
 use crate::game::lawn::{CellOccupancy, GridCell, LawnLayout};
 use crate::game::level::{PlantCards, SpawnSun, SunBank};
 use crate::game::model::plant_model_parts;
-use crate::game::physics::plant_groups;
+use crate::game::physics::{plant_groups, torchwood_groups};
 use crate::game::projectile::{ProjectileKind, ProjectileRoute, SpawnProjectile};
 use crate::game::schedule::GameSet;
 use crate::game::state::GameState;
@@ -62,6 +62,17 @@ impl Plugin for PlantPlugin {
 /// 植物标记组件，用于查询区分植物与其他实体。
 #[derive(Component, Debug)]
 pub struct Plant;
+
+/// 火炬树桩上半部的路径弹丸判定矩形。
+#[derive(Component, Debug, Clone, Copy)]
+pub struct TorchwoodFlameZone {
+    pub offset: Vec2,
+    pub half_size: Vec2,
+}
+
+/// Rapier 使用的火炬点燃 Sensor 标记。
+#[derive(Component, Debug)]
+pub struct TorchwoodFlameCollider;
 
 /// 内部组件：动作计时器，用于驱动周期性行为（射击间隔、产太阳间隔）。
 #[derive(Component, Debug)]
@@ -205,6 +216,22 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
                 ));
             }
             PlantBehavior::Blocker => {}
+        }
+        if request.kind == PlantKind::Torchwood {
+            let zone = TorchwoodFlameZone {
+                offset: Vec2::new(0.0, 18.0),
+                half_size: Vec2::new(24.0, 15.0),
+            };
+            entity.insert(zone);
+            entity.with_child((
+                Collider::cuboid(zone.half_size.x, zone.half_size.y),
+                Sensor,
+                ActiveEvents::COLLISION_EVENTS,
+                torchwood_groups(),
+                Transform::from_xyz(zone.offset.x, zone.offset.y, 0.0),
+                TorchwoodFlameCollider,
+                Name::new("火炬树桩点燃区"),
+            ));
         }
         let id = entity.id();
         params.occupancy.0.insert(request.cell, id);

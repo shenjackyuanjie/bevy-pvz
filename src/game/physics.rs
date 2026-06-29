@@ -34,6 +34,8 @@ pub const PHYSICS_PROJECTILE_GROUP: Group = Group::GROUP_4;
 pub const WORLD_BOUNDARY_GROUP: Group = Group::GROUP_5;
 /// 割草机碰撞组。
 pub const MOWER_GROUP: Group = Group::GROUP_6;
+/// 火炬树桩上半部点燃区碰撞组。
+pub const TORCHWOOD_GROUP: Group = Group::GROUP_7;
 
 /// 物理碰撞体调试渲染的启动配置。
 #[derive(Resource, Debug, Default, Clone, Copy)]
@@ -103,8 +105,13 @@ pub fn zombie_groups() -> CollisionGroups {
 pub fn physics_projectile_groups() -> CollisionGroups {
     CollisionGroups::new(
         PHYSICS_PROJECTILE_GROUP,
-        ZOMBIE_GROUP | PHYSICS_PROJECTILE_GROUP | WORLD_BOUNDARY_GROUP,
+        ZOMBIE_GROUP | PHYSICS_PROJECTILE_GROUP | WORLD_BOUNDARY_GROUP | TORCHWOOD_GROUP,
     )
+}
+
+/// 火炬树桩点燃区只与物理豌豆发生事件。
+pub fn torchwood_groups() -> CollisionGroups {
+    CollisionGroups::new(TORCHWOOD_GROUP, PHYSICS_PROJECTILE_GROUP)
 }
 
 /// 创建世界边界的碰撞组过滤配置。

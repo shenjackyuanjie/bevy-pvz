@@ -12,7 +12,7 @@ use crate::game::lawn::{CellOccupancy, LawnLayout};
 use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, ShovelMode, SunBank};
 use crate::game::model::plant_model_parts;
 use crate::game::plant::{PlantKind, PlantRequest};
-use crate::game::projectile::ProjectileKind;
+use crate::game::projectile::{ProjectileKind, ProjectileMotion};
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
 use crate::game::zombie::Zombie;
@@ -112,7 +112,7 @@ struct HudParams<'w, 's> {
     definition: Res<'w, LevelDefinition>,
     catalog: Res<'w, ContentCatalog>,
     theme: Res<'w, UiTheme>,
-    projectiles: Query<'w, 's, &'static ProjectileKind>,
+    projectiles: Query<'w, 's, (&'static ProjectileKind, &'static ProjectileMotion)>,
     living_zombies: Query<'w, 's, (), (With<Zombie>, Without<Dead>)>,
     stats: Single<'w, 's, &'static mut Text, With<HudStatsText>>,
     labels: Query<'w, 's, PlantCardLabelItem, PlantCardLabelFilter>,
@@ -531,12 +531,10 @@ fn update_hud(mut params: HudParams) {
     );
     let mut path_peas = 0;
     let mut physics_peas = 0;
-    for kind in &params.projectiles {
-        match kind {
-            ProjectileKind::Pea | ProjectileKind::IcePea | ProjectileKind::FirePea => {
-                path_peas += 1;
-            }
-            ProjectileKind::PhysicsPea => physics_peas += 1,
+    for (_, motion) in &params.projectiles {
+        match motion {
+            ProjectileMotion::Path => path_peas += 1,
+            ProjectileMotion::Physics => physics_peas += 1,
         }
     }
     stats.push_str(&format!(

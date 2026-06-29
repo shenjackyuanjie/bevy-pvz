@@ -26,6 +26,7 @@ use crate::game::combat::{ApplyDamage, DamageKind, Team};
 use crate::game::controls::ControlBindings;
 use crate::game::lawn::LawnLayout;
 use crate::game::physics::physics_projectile_groups;
+use crate::game::plant::{TorchwoodFlameCollider, TorchwoodFlameZone};
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::zombie::Zombie;
@@ -40,6 +41,7 @@ impl Plugin for ProjectilePlugin {
         app.init_resource::<ProjectileRenderAssets>()
             .add_message::<SpawnProjectile>()
             .add_message::<ProjectileHit>()
+            .add_message::<IgniteProjectile>()
             .add_systems(
                 FixedUpdate,
                 spawn_projectiles
@@ -54,13 +56,19 @@ impl Plugin for ProjectilePlugin {
             )
             .add_systems(
                 FixedUpdate,
-                (query_path_projectile_hits, collect_rapier_collision_events)
+                (
+                    detect_path_torchwood_ignitions,
+                    collect_physics_torchwood_collisions,
+                    query_path_projectile_hits,
+                    collect_rapier_collision_events,
+                )
                     .in_set(GameSet::ContactRead)
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 FixedUpdate,
-                resolve_projectile_hits
+                (apply_projectile_ignitions, resolve_projectile_hits)
+                    .chain()
                     .in_set(GameSet::Combat)
                     .before(crate::game::combat::apply_damage)
                     .run_if(in_state(GameState::Playing)),
@@ -115,6 +123,9 @@ struct LeftEdgePortal {
 #[derive(Component, Debug, Clone, Copy)]
 struct ProjectileRadius(f32);
 
+#[derive(Component)]
+struct ProjectileFill;
+
 #[derive(Clone)]
 struct ProjectileRenderAssetSet {
     border_mesh: Handle<Mesh>,
@@ -168,6 +179,9 @@ pub struct ProjectileHit {
     pub target: Entity,
 }
 
+#[derive(Message, Debug, Clone, Copy)]
+struct IgniteProjectile(Entity);
+
 /// 消费 [`SpawnProjectile`] 消息，创建对应的弹丸实体。
 ///
 /// 根据种类不同，普通豌豆附加路径运动组件，物理豌豆附加 Rapier 物理组件。
@@ -181,18 +195,13 @@ fn spawn_projectiles(
 ) {
     for request in requests.read() {
         let definition = catalog.projectile(request.kind);
-        let render = render_assets
-            .0
-            .entry(request.kind)
-            .or_insert_with(|| ProjectileRenderAssetSet {
-                border_mesh: meshes.add(Circle::new(definition.radius)),
-                fill_mesh: meshes.add(Circle::new(
-                    definition.radius - definition.visual.border_width,
-                )),
-                border_material: materials.add(definition.visual.border_color),
-                fill_material: materials.add(definition.visual.fill_color),
-            })
-            .clone();
+        let render = projectile_render_assets(
+            request.kind,
+            &catalog,
+            &mut meshes,
+            &mut materials,
+            &mut render_assets,
+        );
 
         // 共享基础组件：圆形描边、变换、Projectile 核心组件和命中注册表等
         let base = (
@@ -263,9 +272,34 @@ fn spawn_projectiles(
             Mesh2d(render.fill_mesh),
             MeshMaterial2d(render.fill_material),
             Transform::from_xyz(0.0, 0.0, 0.1),
+            ProjectileFill,
             Name::new("Projectile fill"),
         ));
     }
+}
+
+fn projectile_render_assets(
+    kind: ProjectileKind,
+    catalog: &ContentCatalog,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    render_assets: &mut ProjectileRenderAssets,
+) -> ProjectileRenderAssetSet {
+    render_assets
+        .0
+        .entry(kind)
+        .or_insert_with(|| {
+            let definition = catalog.projectile(kind);
+            ProjectileRenderAssetSet {
+                border_mesh: meshes.add(Circle::new(definition.radius)),
+                fill_mesh: meshes.add(Circle::new(
+                    definition.radius - definition.visual.border_width,
+                )),
+                border_material: materials.add(definition.visual.border_color),
+                fill_material: materials.add(definition.visual.fill_color),
+            }
+        })
+        .clone()
 }
 
 /// 路径弹丸运动：底排弹丸向左越过边界后传送到 row 0 并改为向右。
@@ -305,6 +339,117 @@ fn advance_path_step(
         (portal.exit, portal.exit)
     } else {
         (next, start)
+    }
+}
+
+/// 路径豌豆使用扫掠检测穿过火炬上半部，不依赖 Rapier 碰撞事件。
+fn detect_path_torchwood_ignitions(
+    projectiles: Query<
+        (
+            Entity,
+            &Transform,
+            &PreviousPosition,
+            &ProjectileRadius,
+            &ProjectileKind,
+        ),
+        With<PathVelocity>,
+    >,
+    torchwoods: Query<(&Transform, &TorchwoodFlameZone)>,
+    mut ignitions: MessageWriter<IgniteProjectile>,
+) {
+    for (entity, transform, previous, radius, kind) in &projectiles {
+        if *kind == ProjectileKind::FirePea {
+            continue;
+        }
+        let end = transform.translation.truncate();
+        if torchwoods.iter().any(|(torch_transform, zone)| {
+            let center = torch_transform.translation.truncate() + zone.offset;
+            swept_circle_hit_t(previous.0, end, center, zone.half_size, radius.0).is_some()
+        }) {
+            ignitions.write(IgniteProjectile(entity));
+        }
+    }
+}
+
+/// 物理豌豆只在 Rapier 报告与火炬 Sensor 实际接触时点燃。
+fn collect_physics_torchwood_collisions(
+    mut collisions: MessageReader<CollisionEvent>,
+    projectiles: Query<&ProjectileMotion, With<Projectile>>,
+    flame_colliders: Query<(), With<TorchwoodFlameCollider>>,
+    mut ignitions: MessageWriter<IgniteProjectile>,
+) {
+    for collision in collisions.read() {
+        let CollisionEvent::Started(a, b, _) = *collision else {
+            continue;
+        };
+        let projectile = if projectiles.get(a) == Ok(&ProjectileMotion::Physics)
+            && flame_colliders.contains(b)
+        {
+            Some(a)
+        } else if projectiles.get(b) == Ok(&ProjectileMotion::Physics)
+            && flame_colliders.contains(a)
+        {
+            Some(b)
+        } else {
+            None
+        };
+        if let Some(projectile) = projectile {
+            ignitions.write(IgniteProjectile(projectile));
+        }
+    }
+}
+
+/// 统一将点燃的豌豆切换为火焰伤害和红色系材质，保留原运动管线。
+fn apply_projectile_ignitions(
+    mut ignitions: MessageReader<IgniteProjectile>,
+    catalog: Res<ContentCatalog>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut render_assets: ResMut<ProjectileRenderAssets>,
+    mut projectiles: Query<(
+        &mut Projectile,
+        &mut ProjectileKind,
+        &mut Mesh2d,
+        &mut MeshMaterial2d<ColorMaterial>,
+        &Children,
+    )>,
+    mut fills: Query<
+        (&mut Mesh2d, &mut MeshMaterial2d<ColorMaterial>),
+        (With<ProjectileFill>, Without<Projectile>),
+    >,
+    mut converted: Local<HashSet<Entity>>,
+) {
+    converted.clear();
+    for request in ignitions.read() {
+        if !converted.insert(request.0) {
+            continue;
+        }
+        let Ok((mut projectile, mut kind, mut border_mesh, mut border_material, children)) =
+            projectiles.get_mut(request.0)
+        else {
+            continue;
+        };
+        if *kind == ProjectileKind::FirePea {
+            continue;
+        }
+        let fire = catalog.projectile(ProjectileKind::FirePea);
+        let render = projectile_render_assets(
+            ProjectileKind::FirePea,
+            &catalog,
+            &mut meshes,
+            &mut materials,
+            &mut render_assets,
+        );
+        projectile.damage = fire.damage;
+        *kind = ProjectileKind::FirePea;
+        *border_mesh = Mesh2d(render.border_mesh);
+        *border_material = MeshMaterial2d(render.border_material);
+        for child in children.iter() {
+            if let Ok((mut fill_mesh, mut fill_material)) = fills.get_mut(child) {
+                *fill_mesh = Mesh2d(render.fill_mesh.clone());
+                *fill_material = MeshMaterial2d(render.fill_material.clone());
+            }
+        }
     }
 }
 
@@ -616,5 +761,48 @@ mod tests {
             false,
             true,
         )));
+    }
+
+    #[test]
+    fn ignition_changes_damage_kind_and_render_assets() {
+        let mut app = App::new();
+        app.add_message::<SpawnProjectile>()
+            .add_message::<IgniteProjectile>()
+            .init_resource::<ContentCatalog>()
+            .init_resource::<Assets<Mesh>>()
+            .init_resource::<Assets<ColorMaterial>>()
+            .init_resource::<ProjectileRenderAssets>()
+            .add_systems(
+                Update,
+                (spawn_projectiles, apply_projectile_ignitions).chain(),
+            );
+        app.world_mut().write_message(SpawnProjectile {
+            owner: Entity::PLACEHOLDER,
+            origin: Vec2::ZERO,
+            kind: ProjectileKind::Pea,
+            route: ProjectileRoute::Direct,
+        });
+        app.update();
+
+        let entity = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<Entity, With<Projectile>>();
+            query.single(world).unwrap()
+        };
+        app.world_mut().write_message(IgniteProjectile(entity));
+        app.update();
+
+        let world = app.world();
+        assert_eq!(
+            *world.get::<ProjectileKind>(entity).unwrap(),
+            ProjectileKind::FirePea
+        );
+        assert_eq!(
+            world.get::<Projectile>(entity).unwrap().damage,
+            world
+                .resource::<ContentCatalog>()
+                .projectile(ProjectileKind::FirePea)
+                .damage
+        );
     }
 }
