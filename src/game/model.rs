@@ -69,31 +69,67 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
     match kind {
         PlantKind::Sunflower => {
             let yellow = Color::srgb(1.0, 0.76, 0.08);
-            for (offset, rotation) in [
-                (Vec2::new(0.0, 25.0), 0.0),
-                (Vec2::new(0.0, 5.0), 0.0),
-                (Vec2::new(-10.0, 15.0), std::f32::consts::FRAC_PI_2),
-                (Vec2::new(10.0, 15.0), std::f32::consts::FRAC_PI_2),
-            ] {
+            let flower_center = Vec2::new(0.0, 15.0);
+            for index in 0..8 {
+                let rotation = index as f32 * std::f32::consts::FRAC_PI_4;
+                let offset = flower_center + Vec2::from_angle(rotation) * 16.0;
                 parts.push(part(
                     "向日葵花瓣",
                     yellow,
-                    Vec2::new(25.0, 12.0),
+                    Vec2::new(22.0, 10.0),
                     offset,
                     rotation,
                     0.2,
                     alpha,
                 ));
             }
-            parts.push(part(
-                "向日葵花盘",
-                Color::srgb(0.48, 0.25, 0.06),
-                Vec2::splat(23.0),
-                Vec2::new(0.0, 15.0),
-                0.0,
-                0.3,
-                alpha,
-            ));
+            parts.extend([
+                part(
+                    "向日葵外花盘",
+                    Color::srgb(0.38, 0.16, 0.03),
+                    Vec2::splat(29.0),
+                    flower_center,
+                    0.0,
+                    0.3,
+                    alpha,
+                ),
+                part(
+                    "向日葵内花盘",
+                    Color::srgb(0.66, 0.34, 0.08),
+                    Vec2::splat(21.0),
+                    flower_center,
+                    0.0,
+                    0.4,
+                    alpha * 0.92,
+                ),
+                part(
+                    "向日葵左眼",
+                    Color::srgb(0.10, 0.04, 0.01),
+                    Vec2::new(3.0, 5.0),
+                    flower_center + Vec2::new(-5.0, 2.0),
+                    0.0,
+                    0.5,
+                    alpha,
+                ),
+                part(
+                    "向日葵右眼",
+                    Color::srgb(0.10, 0.04, 0.01),
+                    Vec2::new(3.0, 5.0),
+                    flower_center + Vec2::new(5.0, 2.0),
+                    0.0,
+                    0.5,
+                    alpha,
+                ),
+                part(
+                    "向日葵微笑",
+                    Color::srgb(0.18, 0.05, 0.01),
+                    Vec2::new(9.0, 3.0),
+                    flower_center + Vec2::new(0.0, -5.0),
+                    0.0,
+                    0.5,
+                    alpha,
+                ),
+            ]);
         }
         PlantKind::Peashooter | PlantKind::Repeater | PlantKind::GatlingPea => {
             let (head_color, barrel_count) = match kind {
@@ -102,6 +138,15 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
                 PlantKind::GatlingPea => (Color::srgb(0.05, 0.42, 0.12), 4),
                 _ => unreachable!(),
             };
+            parts.push(part(
+                "豌豆头部阴影",
+                dark_green,
+                Vec2::new(34.0, 28.0),
+                Vec2::new(-4.0, 11.0),
+                0.0,
+                0.15,
+                alpha,
+            ));
             parts.push(part(
                 "豌豆头",
                 head_color,
@@ -159,6 +204,15 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
                 0.5,
                 alpha,
             ));
+            parts.push(part(
+                "豌豆头部高光",
+                Color::srgb(0.42, 0.88, 0.35),
+                Vec2::new(9.0, 4.0),
+                Vec2::new(-10.0, 24.0),
+                -0.2,
+                0.4,
+                alpha * 0.72,
+            ));
         }
         PlantKind::WallNut => {
             parts.clear();
@@ -205,6 +259,33 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
                     Vec2::new(18.0, 5.0),
                     Vec2::new(0.0, -12.0),
                     0.0,
+                    0.3,
+                    alpha,
+                ),
+                part(
+                    "坚果左瞳孔",
+                    Color::srgb(0.08, 0.03, 0.01),
+                    Vec2::new(3.0, 5.0),
+                    Vec2::new(-8.0, 9.0),
+                    0.0,
+                    0.4,
+                    alpha,
+                ),
+                part(
+                    "坚果右瞳孔",
+                    Color::srgb(0.08, 0.03, 0.01),
+                    Vec2::new(3.0, 5.0),
+                    Vec2::new(10.0, 9.0),
+                    0.0,
+                    0.4,
+                    alpha,
+                ),
+                part(
+                    "坚果裂纹",
+                    Color::srgb(0.28, 0.11, 0.03),
+                    Vec2::new(17.0, 3.0),
+                    Vec2::new(8.0, -25.0),
+                    0.55,
                     0.3,
                     alpha,
                 ),
