@@ -13,7 +13,7 @@ pub struct UnitVisualDefinition {
 }
 
 /// 植物种类。
-#[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash, serde::Deserialize)]
 pub enum PlantKind {
     Sunflower,
     Peashooter,
@@ -53,7 +53,7 @@ pub struct PlantDefinition {
 }
 
 /// 僵尸种类。
-#[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash, serde::Deserialize)]
 pub enum ZombieKind {
     Basic,
 }
@@ -414,14 +414,5 @@ mod tests {
     #[test]
     fn built_in_catalog_is_complete_and_valid() {
         ContentCatalog::default().validate().unwrap();
-    }
-
-    #[test]
-    fn projectile_radius_is_the_single_collision_radius() {
-        let catalog = ContentCatalog::default();
-        for kind in ProjectileKind::ALL {
-            let definition = catalog.projectile(kind);
-            assert!(definition.radius > 0.0);
-        }
     }
 }

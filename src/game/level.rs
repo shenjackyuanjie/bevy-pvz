@@ -4,12 +4,13 @@
 //!
 //! - **波次生成**：按时间线自动生成僵尸（[`tick_wave_timeline`]）
 //! - **太阳经济**：太阳存款（[`SunBank`]）与植物卡片冷却（[`PlantCards`]）
-//! - **植物选择**：按数字键 1/2/3 切换当前选中的植物（[`SelectedPlant`]）
+//! - **植物选择**：点击 UI 卡片或按数字键切换当前选中的植物（[`SelectedPlant`]）
 //! - **鼠标交互**：左键点击收集太阳、在棋盘上放置植物（[`handle_world_clicks`]）
 //! - **胜负判定**：僵尸突破房子左侧 → 失败；清空所有僵尸 → 胜利
 //! - **太阳动画**：太阳拾取物上下浮动并旋转
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::Duration;
 
 use bevy::sprite::Text2dShadow;
@@ -20,19 +21,26 @@ use crate::game::catalog::{ContentCatalog, ZombieKind};
 use crate::game::combat::{EntityDied, Team};
 use crate::game::config::GameplaySettings;
 use crate::game::controls::ControlBindings;
-use crate::game::lawn::{CellOccupancy, Lane, LawnLayout};
+use crate::game::lawn::{CellOccupancy, LawnLayout};
 use crate::game::plant::{PlantKind, PlantRequest};
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
 use crate::game::zombie::{SpawnZombie, Zombie};
 
+/// 默认关卡的外部 RON 配置路径。
+pub const DEFAULT_LEVEL_PATH: &str = "assets/levels/level_01.ron";
+
 /// 关卡插件，注册资源、消息和所有关卡管理相关的系统。
 pub struct LevelPlugin;
 
 impl Plugin for LevelPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<LevelDefinition>();
+        if !app.world().contains_resource::<LevelDefinition>() {
+            let definition = LevelDefinition::load_from_file(DEFAULT_LEVEL_PATH)
+                .unwrap_or_else(|error| panic!("failed to load {DEFAULT_LEVEL_PATH}: {error}"));
+            app.insert_resource(definition);
+        }
         let (starting_sun, default_plant, initial_cards) = {
             let definition = app.world().resource::<LevelDefinition>();
             (
@@ -112,13 +120,11 @@ pub struct PlantCardDefinition {
     pub plant: PlantKind,
 }
 
-/// 僵尸生成点定义：指定在什么时间、哪一行生成一个僵尸。
+/// 僵尸生成点定义：指定在什么时间生成哪种僵尸。
 #[derive(Debug, Clone, Copy)]
 pub struct ZombieSpawnDefinition {
     /// 相对于关卡开始的生成时间（秒）。
     pub at_seconds: f32,
-    /// 僵尸出生的行。
-    pub lane: Lane,
     /// 生成的僵尸种类。
     pub kind: ZombieKind,
 }
@@ -136,94 +142,97 @@ pub struct LevelDefinition {
     pub spawns: Vec<ZombieSpawnDefinition>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LevelConfig {
+    id: String,
+    display_name: String,
+    starting_sun: u32,
+    lawn: LawnConfig,
+    cards: Vec<PlantCardConfig>,
+    default_plant: PlantKind,
+    waves: Vec<WaveConfig>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LawnConfig {
+    columns: u8,
+    cell_size: (f32, f32),
+    path_y: f32,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlantCardConfig {
+    slot: u8,
+    plant: PlantKind,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WaveConfig {
+    /// 距上一波最后一只僵尸的时间；第一波表示开局等待。
+    delay: f32,
+    kind: ZombieKind,
+    count: u32,
+    /// 同一波相邻僵尸之间的时间。
+    interval: f32,
+}
+
 impl Default for LevelDefinition {
     fn default() -> Self {
-        Self {
-            id: LevelId("level_01".into()),
-            display_name: "前院防线".into(),
-            starting_sun: 250,
-            lawn: LawnLayout::default(),
-            cards: vec![
-                PlantCardDefinition {
-                    slot: 1,
-                    key: KeyCode::Digit1,
-                    plant: PlantKind::Sunflower,
-                },
-                PlantCardDefinition {
-                    slot: 2,
-                    key: KeyCode::Digit2,
-                    plant: PlantKind::Peashooter,
-                },
-                PlantCardDefinition {
-                    slot: 3,
-                    key: KeyCode::Digit3,
-                    plant: PlantKind::WallNut,
-                },
-            ],
-            default_plant: PlantKind::Peashooter,
-            // 默认 11 个僵尸的关卡配置，分布在 5 行、约 53 秒内
-            spawns: vec![
-                ZombieSpawnDefinition {
-                    at_seconds: 4.0,
-                    lane: Lane(2),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 10.0,
-                    lane: Lane(0),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 14.0,
-                    lane: Lane(4),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 20.0,
-                    lane: Lane(1),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 24.0,
-                    lane: Lane(3),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 31.0,
-                    lane: Lane(2),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 36.0,
-                    lane: Lane(0),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 38.0,
-                    lane: Lane(4),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 46.0,
-                    lane: Lane(1),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 47.5,
-                    lane: Lane(3),
-                    kind: ZombieKind::Basic,
-                },
-                ZombieSpawnDefinition {
-                    at_seconds: 53.0,
-                    lane: Lane(2),
-                    kind: ZombieKind::Basic,
-                },
-            ],
-        }
+        Self::from_ron_str(include_str!("../../assets/levels/level_01.ron"))
+            .expect("invalid bundled level_01.ron")
     }
 }
 
 impl LevelDefinition {
+    /// 从外部 RON 文件读取关卡；修改文件后重新启动游戏即可生效。
+    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, String> {
+        let path = path.as_ref();
+        let source = std::fs::read_to_string(path)
+            .map_err(|error| format!("cannot read {}: {error}", path.display()))?;
+        Self::from_ron_str(&source)
+            .map_err(|error| format!("cannot parse {}: {error}", path.display()))
+    }
+
+    fn from_ron_str(source: &str) -> Result<Self, String> {
+        let config: LevelConfig = ron::from_str(source).map_err(|error| error.to_string())?;
+        let cell_size = Vec2::new(config.lawn.cell_size.0, config.lawn.cell_size.1);
+        let lawn = LawnLayout {
+            columns: config.lawn.columns,
+            cell_size,
+            origin: Vec2::new(
+                -(f32::from(config.lawn.columns) * cell_size.x) * 0.5,
+                config.lawn.path_y - cell_size.y * 0.5,
+            ),
+        };
+        let cards = config
+            .cards
+            .into_iter()
+            .map(|card| {
+                Ok(PlantCardDefinition {
+                    slot: card.slot,
+                    key: card_key(card.slot).ok_or_else(|| {
+                        format!("card slot {} has no numeric shortcut", card.slot)
+                    })?,
+                    plant: card.plant,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let spawns = expand_waves(config.waves)?;
+        Ok(Self {
+            id: LevelId(config.id),
+            display_name: config.display_name,
+            starting_sun: config.starting_sun,
+            lawn,
+            cards,
+            default_plant: config.default_plant,
+            spawns,
+        })
+    }
+
     pub fn validate(&self, catalog: &ContentCatalog) -> Result<(), String> {
         if self.id.0.trim().is_empty() {
             return Err("level id must not be empty".into());
@@ -231,9 +240,12 @@ impl LevelDefinition {
         if self.display_name.trim().is_empty() {
             return Err("level display name must not be empty".into());
         }
-        if self.lawn.rows == 0 || self.lawn.columns == 0 || self.lawn.cell_size.min_element() <= 0.0
+        if self.lawn.columns == 0
+            || !self.lawn.cell_size.is_finite()
+            || !self.lawn.origin.is_finite()
+            || self.lawn.cell_size.min_element() <= 0.0
         {
-            return Err("lawn dimensions must be positive".into());
+            return Err("lawn dimensions must be finite and positive".into());
         }
         if self.cards.is_empty() {
             return Err("level must contain at least one plant card".into());
@@ -279,12 +291,6 @@ impl LevelDefinition {
             if index > 0 && spawn.at_seconds < previous {
                 return Err(format!("spawn timeline is not sorted at index {index}"));
             }
-            if spawn.lane.0 >= self.lawn.rows {
-                return Err(format!(
-                    "spawn {index} lane {} is outside lawn",
-                    spawn.lane.0
-                ));
-            }
             if !catalog.contains_zombie(spawn.kind) {
                 return Err(format!(
                     "spawn {index} references missing zombie {:?}",
@@ -295,6 +301,58 @@ impl LevelDefinition {
         }
         Ok(())
     }
+}
+
+fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieSpawnDefinition>, String> {
+    let mut spawns = Vec::new();
+    let mut elapsed = 0.0;
+    for (index, wave) in waves.into_iter().enumerate() {
+        if !wave.delay.is_finite() || wave.delay < 0.0 {
+            return Err(format!(
+                "wave {index} delay must be finite and non-negative"
+            ));
+        }
+        if wave.count == 0 {
+            return Err(format!("wave {index} count must be positive"));
+        }
+        if !wave.interval.is_finite() || wave.interval < 0.0 {
+            return Err(format!(
+                "wave {index} interval must be finite and non-negative"
+            ));
+        }
+        if wave.count > 1 && wave.interval == 0.0 {
+            return Err(format!(
+                "wave {index} interval must be positive when count is greater than one"
+            ));
+        }
+
+        elapsed += wave.delay;
+        for spawn_index in 0..wave.count {
+            spawns.push(ZombieSpawnDefinition {
+                at_seconds: elapsed,
+                kind: wave.kind,
+            });
+            if spawn_index + 1 < wave.count {
+                elapsed += wave.interval;
+            }
+        }
+    }
+    Ok(spawns)
+}
+
+fn card_key(slot: u8) -> Option<KeyCode> {
+    Some(match slot {
+        1 => KeyCode::Digit1,
+        2 => KeyCode::Digit2,
+        3 => KeyCode::Digit3,
+        4 => KeyCode::Digit4,
+        5 => KeyCode::Digit5,
+        6 => KeyCode::Digit6,
+        7 => KeyCode::Digit7,
+        8 => KeyCode::Digit8,
+        9 => KeyCode::Digit9,
+        _ => return None,
+    })
 }
 
 /// 关卡运行时数据资源，追踪游戏进行中的状态。
@@ -347,7 +405,7 @@ impl PlantCards {
     }
 }
 
-/// 当前选中的植物资源，由数字键 1/2/3 切换。
+/// 当前选中的植物资源，由 UI 卡片或数字键切换。
 #[derive(Resource, Debug)]
 pub struct SelectedPlant(pub PlantKind);
 
@@ -412,10 +470,7 @@ fn tick_wave_timeline(
     while let Some(next) = definition.spawns.get(runtime.next_spawn)
         && runtime.elapsed.as_secs_f32() >= next.at_seconds
     {
-        spawn.write(SpawnZombie {
-            kind: next.kind,
-            lane: next.lane,
-        });
+        spawn.write(SpawnZombie { kind: next.kind });
         runtime.next_spawn += 1;
     }
 }
@@ -493,6 +548,7 @@ struct WorldClickParams<'w, 's> {
     camera: Single<'w, 's, (&'static Camera, &'static GlobalTransform)>,
     layout: Res<'w, LawnLayout>,
     selected: Res<'w, SelectedPlant>,
+    ui_buttons: Query<'w, 's, &'static Interaction, With<Button>>,
     pickups: Query<'w, 's, (Entity, &'static Transform, &'static SunPickup)>,
     bank: ResMut<'w, SunBank>,
     plant: MessageWriter<'w, PlantRequest>,
@@ -506,6 +562,14 @@ struct WorldClickParams<'w, 's> {
 /// 3. 否则检测是否点到了棋盘格子，是则发出 [`PlantRequest`] 放置当前选中的植物
 fn handle_world_clicks(mut params: WorldClickParams) {
     if !params.mouse.just_pressed(params.controls.place_or_collect) {
+        return;
+    }
+    // Bevy UI 与世界共用鼠标输入；点击按钮时不能让同一次点击穿透到草坪。
+    if params
+        .ui_buttons
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed)
+    {
         return;
     }
     let Some(cursor) = params.window.cursor_position() else {
@@ -566,7 +630,7 @@ fn validate_level_definition(
 ) {
     definition
         .validate(&catalog)
-        .expect("invalid built-in level definition");
+        .expect("invalid loaded level definition");
     controls
         .validate(definition.cards.iter().map(|card| card.key))
         .expect("invalid control bindings");
@@ -643,7 +707,6 @@ mod tests {
             .insert_resource(LevelDefinition {
                 spawns: vec![ZombieSpawnDefinition {
                     at_seconds: 0.0,
-                    lane: Lane(2),
                     kind: ZombieKind::Basic,
                 }],
                 ..default()
@@ -672,14 +735,15 @@ mod tests {
     }
 
     #[test]
-    fn default_level_is_complete_and_valid() {
-        LevelDefinition::default()
+    fn ron_level_is_complete_and_valid() {
+        LevelDefinition::load_from_file(DEFAULT_LEVEL_PATH)
+            .unwrap()
             .validate(&ContentCatalog::default())
             .unwrap();
     }
 
     #[test]
-    fn validation_rejects_duplicate_keys_and_invalid_lanes() {
+    fn validation_rejects_duplicate_keys_and_invalid_lawn() {
         let catalog = ContentCatalog::default();
         let mut level = LevelDefinition::default();
         level.cards[1].key = level.cards[0].key;
@@ -690,12 +754,12 @@ mod tests {
                 .contains("duplicate card key")
         );
         level = LevelDefinition::default();
-        level.spawns[0].lane = Lane(level.lawn.rows);
+        level.lawn.cell_size.y = 0.0;
         assert!(
             level
                 .validate(&catalog)
                 .unwrap_err()
-                .contains("outside lawn")
+                .contains("finite and positive")
         );
     }
 
@@ -705,7 +769,7 @@ mod tests {
             starting_sun: 777,
             default_plant: PlantKind::WallNut,
             lawn: LawnLayout {
-                rows: 4,
+                columns: 7,
                 ..default()
             },
             ..default()
@@ -732,7 +796,7 @@ mod tests {
             app.world().resource::<SelectedPlant>().0,
             PlantKind::WallNut
         );
-        assert_eq!(app.world().resource::<LawnLayout>().rows, 4);
+        assert_eq!(app.world().resource::<LawnLayout>().columns, 7);
         assert_eq!(app.world().resource::<LevelRuntime>().next_spawn, 0);
         assert_eq!(app.world().resource::<PlantCards>().0.len(), 3);
     }

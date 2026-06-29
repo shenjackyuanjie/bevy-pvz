@@ -15,7 +15,7 @@ use bevy_rapier2d::prelude::*;
 use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog, PlantBehavior};
 use crate::game::combat::{Dead, Health, Team};
-use crate::game::lawn::{CellOccupancy, GridCell, Lane, LawnLayout};
+use crate::game::lawn::{CellOccupancy, GridCell, LawnLayout};
 use crate::game::level::{PlantCards, SpawnSun, SunBank};
 use crate::game::physics::plant_groups;
 use crate::game::projectile::{ProjectileKind, SpawnProjectile};
@@ -114,7 +114,6 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
             Plant,
             request.kind,
             request.cell,
-            Lane(request.cell.row),
             Health::new(definition.health),
             Team::Plants,
             RigidBody::Fixed,
@@ -179,25 +178,24 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
     }
 }
 
-/// 豌豆射手行为：检测前方同行的僵尸，发射豌豆。
+/// 豌豆射手行为：检测道路前方的僵尸，发射豌豆。
 ///
 /// 只有当射手的 `ActionTimer` 归零（射击间隔结束）且前方存在僵尸时才会发射。
 fn fire_ready_shooters(
     time: Res<Time<Fixed>>,
-    mut shooters: Query<(Entity, &Transform, &Lane, &Shooter, &mut ActionTimer)>,
-    zombies: Query<(&Transform, &Lane), With<Zombie>>,
+    mut shooters: Query<(Entity, &Transform, &Shooter, &mut ActionTimer)>,
+    zombies: Query<&Transform, With<Zombie>>,
     mut spawn: MessageWriter<SpawnProjectile>,
 ) {
-    for (entity, transform, lane, shooter, mut timer) in &mut shooters {
+    for (entity, transform, shooter, mut timer) in &mut shooters {
         timer.0.tick(time.delta());
-        let has_target = zombies.iter().any(|(zombie_transform, zombie_lane)| {
-            zombie_lane == lane && zombie_transform.translation.x > transform.translation.x
-        });
+        let has_target = zombies
+            .iter()
+            .any(|zombie_transform| zombie_transform.translation.x > transform.translation.x);
         if has_target && timer.0.just_finished() {
             spawn.write(SpawnProjectile {
                 owner: entity,
                 origin: transform.translation.truncate() + shooter.muzzle_offset,
-                lane: *lane,
                 kind: shooter.projectile,
             });
         }

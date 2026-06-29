@@ -1,0 +1,22 @@
+(
+    id: "level_01",
+    display_name: "前院防线",
+    starting_sun: 250,
+    lawn: (
+        columns: 9,
+        cell_size: (90.0, 90.0),
+        path_y: -180.0,
+    ),
+    cards: [
+        (slot: 1, plant: Sunflower),
+        (slot: 2, plant: Peashooter),
+        (slot: 3, plant: WallNut),
+    ],
+    default_plant: Peashooter,
+    waves: [
+        (delay: 4.0, kind: Basic, count: 3, interval: 5.0),
+        (delay: 6.0, kind: Basic, count: 3, interval: 5.5),
+        (delay: 5.0, kind: Basic, count: 3, interval: 5.0),
+        (delay: 1.5, kind: Basic, count: 2, interval: 5.5),
+    ],
+)

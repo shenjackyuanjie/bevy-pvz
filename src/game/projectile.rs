@@ -24,7 +24,7 @@ use crate::game::combat::{ApplyDamage, DamageKind, Team};
 use crate::game::config::GameplaySettings;
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
-use crate::game::lawn::{Lane, LawnLayout};
+use crate::game::lawn::LawnLayout;
 use crate::game::physics::physics_projectile_groups;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
@@ -129,8 +129,6 @@ pub struct SpawnProjectile {
     pub owner: Entity,
     /// 弹丸生成位置。
     pub origin: Vec2,
-    /// 弹丸所在行（用于同行碰撞检测）。
-    pub lane: Lane,
     /// 弹丸种类。
     pub kind: ProjectileKind,
 }
@@ -154,7 +152,7 @@ fn spawn_projectiles(
 ) {
     for request in requests.read() {
         let definition = catalog.projectile(request.kind);
-        // 共享基础组件：精灵、变换、Projectile 核心组件、行、命中注册表等
+        // 共享基础组件：精灵、变换、Projectile 核心组件和命中注册表等
         let base = (
             Sprite::from_color(definition.visual.color, definition.visual.size),
             Transform::from_translation(request.origin.extend(3.0)),
@@ -164,7 +162,6 @@ fn spawn_projectiles(
                 damage: definition.damage,
                 lifetime: Timer::new(definition.lifetime, TimerMode::Once),
             },
-            request.lane,
             request.kind,
             ProjectileRadius(definition.radius),
             HitRegistry::default(),
@@ -233,7 +230,6 @@ type PathProjectileData<'a> = (
     Entity,
     &'a Transform,
     &'a PreviousPosition,
-    &'a Lane,
     &'a HitRegistry,
     &'a ProjectileRadius,
 );
@@ -242,18 +238,18 @@ type PathProjectileData<'a> = (
 type PathProjectileFilter = (With<Projectile>, With<PathVelocity>);
 
 /// 路径弹丸碰撞检测：对每个弹丸，扫掠其上一帧到当前位置的线段，
-/// 检测是否与同行的僵尸发生碰撞（使用 swept_circle_hit_t 算法），取最近的命中。
+/// 检测是否与道路上的僵尸发生碰撞（使用 swept_circle_hit_t 算法），取最近的命中。
 fn query_path_projectile_hits(
     projectiles: Query<PathProjectileData<'_>, PathProjectileFilter>,
-    zombies: Query<(Entity, &Transform, &Lane, &ColliderHalfSize), With<Zombie>>,
+    zombies: Query<(Entity, &Transform, &ColliderHalfSize), With<Zombie>>,
     mut hits: MessageWriter<ProjectileHit>,
 ) {
-    for (projectile, transform, previous, projectile_lane, registry, radius) in &projectiles {
+    for (projectile, transform, previous, registry, radius) in &projectiles {
         let end = transform.translation.truncate();
         let mut nearest: Option<(f32, Entity)> = None;
 
-        for (zombie, zombie_transform, zombie_lane, collider) in &zombies {
-            if projectile_lane != zombie_lane || registry.0.contains(&zombie) {
+        for (zombie, zombie_transform, collider) in &zombies {
+            if registry.0.contains(&zombie) {
                 continue;
             }
             let center = zombie_transform.translation.truncate();
@@ -344,10 +340,8 @@ fn tick_projectile_lifetimes(
         projectile.lifetime.tick(time.delta());
         let position = transform.translation;
         let min = layout.origin - settings.projectile_cleanup_margin;
-        let max = Vec2::new(
-            layout.right(),
-            layout.origin.y + layout.cell_size.y * f32::from(layout.rows),
-        ) + settings.projectile_cleanup_margin;
+        let max = Vec2::new(layout.right(), layout.origin.y + layout.cell_size.y)
+            + settings.projectile_cleanup_margin;
         if projectile.lifetime.is_finished()
             || position.x < min.x
             || position.x > max.x
@@ -371,8 +365,7 @@ fn projectile_sandbox_keys(
     if *state.get() != GameState::Playing {
         return;
     }
-    let lane = Lane(2);
-    let origin = Vec2::new(layout.origin.x + 30.0, layout.lane_y(lane));
+    let origin = Vec2::new(layout.origin.x + 30.0, layout.path_y());
     let kind = if keyboard.just_pressed(controls.spawn_path_projectile) {
         Some(ProjectileKind::Pea)
     } else if keyboard.just_pressed(controls.spawn_physics_projectile) {
@@ -384,7 +377,6 @@ fn projectile_sandbox_keys(
         spawn.write(SpawnProjectile {
             owner: Entity::PLACEHOLDER,
             origin,
-            lane,
             kind,
         });
     }
@@ -452,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn swept_query_rejects_other_lane() {
+    fn swept_query_rejects_vertical_miss() {
         assert_eq!(
             swept_circle_hit_t(
                 Vec2::new(-100.0, 100.0),
@@ -475,7 +467,6 @@ mod tests {
             app.world_mut().write_message(SpawnProjectile {
                 owner: Entity::PLACEHOLDER,
                 origin: Vec2::ZERO,
-                lane: Lane(2),
                 kind,
             });
         }

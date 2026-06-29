@@ -17,7 +17,7 @@ use bevy_rapier2d::prelude::*;
 use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog};
 use crate::game::combat::{ApplyDamage, DamageKind, Health, Team};
-use crate::game::lawn::{Lane, LawnLayout};
+use crate::game::lawn::LawnLayout;
 use crate::game::physics::zombie_groups;
 use crate::game::plant::Plant;
 use crate::game::schedule::GameSet;
@@ -83,8 +83,6 @@ struct AttackTimer(Timer);
 pub struct SpawnZombie {
     /// 要生成的僵尸种类。
     pub kind: ZombieKind,
-    /// 僵尸出生的行。
-    pub lane: Lane,
 }
 
 /// 处理 [`SpawnZombie`] 消息，在棋盘右侧生成基本僵尸实体。
@@ -98,10 +96,7 @@ pub(crate) fn spawn_zombies(
 ) {
     for request in requests.read() {
         let definition = catalog.zombie(request.kind);
-        let position = Vec2::new(
-            layout.right() + definition.spawn_offset_x,
-            layout.lane_y(request.lane),
-        );
+        let position = Vec2::new(layout.right() + definition.spawn_offset_x, layout.path_y());
         let fallback_theme = UiTheme::default();
         let label = theme
             .as_ref()
@@ -125,7 +120,6 @@ pub(crate) fn spawn_zombies(
                 request.kind,
                 ZombieState::Walking,
                 AttackTimer(Timer::new(definition.attack_interval, TimerMode::Repeating)),
-                request.lane,
                 Health::new(definition.health),
                 Team::Zombies,
             ),
@@ -163,20 +157,19 @@ pub(crate) fn spawn_zombies(
     }
 }
 
-/// 更新僵尸状态：检测前方同行的植物，切换 Walking / Eating。
+/// 更新僵尸状态：检测道路前方的植物，切换 Walking / Eating。
 ///
 /// 判断逻辑：检查僵尸前方距离 [-12, 62] 像素范围内是否存在植物，
 /// 取最近的植物作为啃食目标；无植物则保持 Walking。
 fn update_zombie_state(
-    mut zombies: Query<(&Zombie, &Transform, &Lane, &mut ZombieState)>,
-    plants: Query<(Entity, &Transform, &Lane), With<Plant>>,
+    mut zombies: Query<(&Zombie, &Transform, &mut ZombieState)>,
+    plants: Query<(Entity, &Transform), With<Plant>>,
 ) {
-    for (zombie, zombie_transform, zombie_lane, mut state) in &mut zombies {
+    for (zombie, zombie_transform, mut state) in &mut zombies {
         let zombie_x = zombie_transform.translation.x;
         let blocker = plants
             .iter()
-            .filter(|(_, _, plant_lane)| *plant_lane == zombie_lane)
-            .filter_map(|(entity, plant_transform, _)| {
+            .filter_map(|(entity, plant_transform)| {
                 let distance = zombie_x - plant_transform.translation.x;
                 (zombie.engage_min..=zombie.engage_max)
                     .contains(&distance)
