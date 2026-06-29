@@ -30,7 +30,7 @@ impl Default for ControlBindings {
 }
 
 impl ControlBindings {
-    pub fn validate(&self, card_keys: impl IntoIterator<Item = KeyCode>) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), String> {
         #[cfg(not(feature = "debug_tools"))]
         let keys = [("restart", self.restart)];
         #[cfg(feature = "debug_tools")]
@@ -45,11 +45,6 @@ impl ControlBindings {
                 return Err(format!(
                     "control key {key:?} is assigned more than once ({name})"
                 ));
-            }
-        }
-        for key in card_keys {
-            if let Some((name, _)) = keys.iter().find(|(_, control)| *control == key) {
-                return Err(format!("card key {key:?} conflicts with {name}"));
             }
         }
         Ok(())
@@ -78,21 +73,5 @@ pub fn mouse_label(button: MouseButton) -> String {
         MouseButton::Right => "鼠标右键".into(),
         MouseButton::Middle => "鼠标中键".into(),
         other => format!("{other:?}"),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn card_keys_cannot_conflict_with_global_controls() {
-        let controls = ControlBindings::default();
-        assert!(
-            controls
-                .validate([KeyCode::Digit1, KeyCode::Digit2])
-                .is_ok()
-        );
-        assert!(controls.validate([controls.restart]).is_err());
     }
 }

@@ -8,8 +8,9 @@ use crate::game::assets::GameAssets;
 use crate::game::catalog::ContentCatalog;
 use crate::game::combat::Dead;
 use crate::game::controls::{ControlBindings, key_label, mouse_label};
-use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, SelectedPlant, SunBank};
-use crate::game::plant::PlantKind;
+use crate::game::lawn::LawnLayout;
+use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, ShovelMode, SunBank};
+use crate::game::plant::{PlantKind, PlantRequest};
 use crate::game::projectile::ProjectileKind;
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
@@ -20,10 +21,17 @@ pub struct GameUiPlugin;
 
 impl Plugin for GameUiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(GameState::Playing), setup_hud)
+        app.init_resource::<PlantDragState>()
+            .add_systems(OnEnter(GameState::Playing), setup_hud)
             .add_systems(
                 Update,
-                (select_plant_card_from_ui, update_hud)
+                (
+                    begin_plant_drag,
+                    toggle_shovel,
+                    follow_plant_drag,
+                    finish_plant_drag,
+                    update_hud,
+                )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             )
@@ -47,14 +55,52 @@ struct PlantCardPanel(PlantKind);
 struct PlantCardLabel(PlantKind);
 
 #[derive(Component)]
+/// 标记铲子按钮背景。
+struct ShovelButtonPanel;
+
+#[derive(Component)]
+/// 标记铲子按钮文字。
+struct ShovelButtonLabel;
+
+#[derive(Component)]
+/// 标记跟随鼠标的植物拖拽预览。
+struct PlantDragPreview;
+
+#[derive(Debug)]
+struct ActivePlantDrag {
+    kind: PlantKind,
+    preview: Entity,
+}
+
+#[derive(Resource, Debug, Default)]
+struct PlantDragState {
+    active: Option<ActivePlantDrag>,
+}
+
+type PlantCardLabelItem = (
+    &'static PlantCardLabel,
+    &'static mut Text,
+    &'static mut TextColor,
+);
+type PlantCardLabelFilter = (Without<HudStatsText>, Without<ShovelButtonLabel>);
+type PlantCardPanelItem = (
+    &'static PlantCardPanel,
+    &'static mut BackgroundColor,
+    &'static mut BorderColor,
+);
+type ShovelPanelItem = (&'static mut BackgroundColor, &'static mut BorderColor);
+type ShovelPanelFilter = (With<ShovelButtonPanel>, Without<PlantCardPanel>);
+
+#[derive(Component)]
 /// 标记胜负遮罩，离开结果状态时统一清理。
 struct ResultEntity;
 
 #[derive(SystemParam)]
 struct HudParams<'w, 's> {
     bank: Res<'w, SunBank>,
-    selected: Res<'w, SelectedPlant>,
     cards: Res<'w, PlantCards>,
+    drag: Res<'w, PlantDragState>,
+    shovel: Res<'w, ShovelMode>,
     runtime: Res<'w, LevelRuntime>,
     definition: Res<'w, LevelDefinition>,
     catalog: Res<'w, ContentCatalog>,
@@ -62,25 +108,11 @@ struct HudParams<'w, 's> {
     projectiles: Query<'w, 's, &'static ProjectileKind>,
     living_zombies: Query<'w, 's, (), (With<Zombie>, Without<Dead>)>,
     stats: Single<'w, 's, &'static mut Text, With<HudStatsText>>,
-    labels: Query<
-        'w,
-        's,
-        (
-            &'static PlantCardLabel,
-            &'static mut Text,
-            &'static mut TextColor,
-        ),
-        Without<HudStatsText>,
-    >,
-    panels: Query<
-        'w,
-        's,
-        (
-            &'static PlantCardPanel,
-            &'static mut BackgroundColor,
-            &'static mut BorderColor,
-        ),
-    >,
+    labels: Query<'w, 's, PlantCardLabelItem, PlantCardLabelFilter>,
+    panels: Query<'w, 's, PlantCardPanelItem, Without<ShovelButtonPanel>>,
+    shovel_panel: Single<'w, 's, ShovelPanelItem, ShovelPanelFilter>,
+    shovel_label:
+        Single<'w, 's, &'static mut TextColor, (With<ShovelButtonLabel>, Without<PlantCardLabel>)>,
 }
 
 /// 创建左侧状态/卡片区和右侧操作说明区。
@@ -91,7 +123,9 @@ fn setup_hud(
     catalog: Res<ContentCatalog>,
     definition: Res<LevelDefinition>,
     controls: Res<ControlBindings>,
+    mut drag: ResMut<PlantDragState>,
 ) {
+    drag.active = None;
     let font = assets.chinese_font.clone();
 
     commands
@@ -193,6 +227,35 @@ fn setup_hud(
                                 ));
                             });
                     }
+                    cards
+                        .spawn((
+                            Button,
+                            Node {
+                                width: px(94),
+                                min_height: px(theme.card_size.y),
+                                padding: UiRect::axes(px(7), px(5)),
+                                border: UiRect::all(px(2)),
+                                border_radius: BorderRadius::all(px(theme.panel_radius)),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                ..default()
+                            },
+                            BackgroundColor(theme.card_background),
+                            BorderColor::all(theme.card_border),
+                            ShovelButtonPanel,
+                            Name::new("铲子按钮"),
+                        ))
+                        .with_child((
+                            Text::new("铲子\n移除植物\n点击启用"),
+                            TextFont {
+                                font: font.clone(),
+                                font_size: theme.card_font_size,
+                                ..default()
+                            },
+                            TextColor(theme.card_text),
+                            TextLayout::new_with_justify(Justify::Center),
+                            ShovelButtonLabel,
+                        ));
                 });
             });
 
@@ -227,16 +290,120 @@ fn setup_hud(
         });
 }
 
-/// 点击植物卡片时切换当前选择。卡片即使暂时无法种植，也允许预先选择。
-fn select_plant_card_from_ui(
+/// 在可用植物卡片上按下鼠标时创建拖拽预览。
+fn begin_plant_drag(
+    mut commands: Commands,
     cards: Query<(&Interaction, &PlantCardPanel), Changed<Interaction>>,
-    mut selected: ResMut<SelectedPlant>,
+    catalog: Res<ContentCatalog>,
+    bank: Res<SunBank>,
+    cooldowns: Res<PlantCards>,
+    mut shovel: ResMut<ShovelMode>,
+    mut drag: ResMut<PlantDragState>,
 ) {
     for (interaction, card) in &cards {
-        if *interaction == Interaction::Pressed {
-            selected.0 = card.0;
-            break;
+        if *interaction != Interaction::Pressed || drag.active.is_some() {
+            continue;
         }
+        let definition = catalog.plant(card.0);
+        if !cooldowns.ready(card.0) || bank.amount < definition.price {
+            continue;
+        }
+        shovel.active = false;
+        let preview = commands
+            .spawn((
+                Sprite::from_color(
+                    definition.visual.color.with_alpha(0.72),
+                    definition.visual.size,
+                ),
+                Transform::from_xyz(0.0, 0.0, 30.0),
+                PlantDragPreview,
+                LevelEntity,
+                Name::new(format!("{}拖拽预览", definition.display_name)),
+            ))
+            .id();
+        drag.active = Some(ActivePlantDrag {
+            kind: card.0,
+            preview,
+        });
+        break;
+    }
+}
+
+/// 铲子按钮在启用和取消之间切换，并取消可能存在的植物拖拽。
+fn toggle_shovel(
+    mut commands: Commands,
+    buttons: Query<&Interaction, (With<ShovelButtonPanel>, Changed<Interaction>)>,
+    mut shovel: ResMut<ShovelMode>,
+    mut drag: ResMut<PlantDragState>,
+) {
+    if !buttons
+        .iter()
+        .any(|interaction| *interaction == Interaction::Pressed)
+    {
+        return;
+    }
+    if let Some(active) = drag.active.take() {
+        commands.entity(active.preview).despawn();
+    }
+    shovel.active = !shovel.active;
+}
+
+/// 让植物预览持续跟随鼠标的世界坐标。
+fn follow_plant_drag(
+    drag: Res<PlantDragState>,
+    window: Single<&Window>,
+    camera: Single<(&Camera, &GlobalTransform)>,
+    mut previews: Query<&mut Transform, With<PlantDragPreview>>,
+) {
+    let Some(active) = &drag.active else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let (camera, camera_transform) = *camera;
+    let Ok(world) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+        return;
+    };
+    if let Ok(mut transform) = previews.get_mut(active.preview) {
+        transform.translation.x = world.x;
+        transform.translation.y = world.y;
+    }
+}
+
+/// 鼠标松开时销毁预览；落点位于草坪内时提交种植请求。
+#[derive(SystemParam)]
+struct FinishPlantDragParams<'w, 's> {
+    commands: Commands<'w, 's>,
+    mouse: Res<'w, ButtonInput<MouseButton>>,
+    controls: Res<'w, ControlBindings>,
+    window: Single<'w, 's, &'static Window>,
+    camera: Single<'w, 's, (&'static Camera, &'static GlobalTransform)>,
+    layout: Res<'w, LawnLayout>,
+    drag: ResMut<'w, PlantDragState>,
+    requests: MessageWriter<'w, PlantRequest>,
+}
+
+fn finish_plant_drag(mut params: FinishPlantDragParams) {
+    if !params.mouse.just_released(params.controls.place_or_collect) {
+        return;
+    }
+    let Some(active) = params.drag.active.take() else {
+        return;
+    };
+    params.commands.entity(active.preview).despawn();
+    let Some(cursor) = params.window.cursor_position() else {
+        return;
+    };
+    let (camera, camera_transform) = *params.camera;
+    let Ok(world) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+        return;
+    };
+    if let Some(cell) = params.layout.world_to_cell(world) {
+        params.requests.write(PlantRequest {
+            kind: active.kind,
+            cell,
+        });
     }
 }
 
@@ -279,16 +446,17 @@ fn update_hud(mut params: HudParams) {
         } else {
             "可种植".to_string()
         };
-        let marker = if params.selected.0 == kind {
-            "▶"
-        } else {
-            " "
-        };
+        let is_dragged = params
+            .drag
+            .active
+            .as_ref()
+            .is_some_and(|active| active.kind == kind);
+        let marker = if is_dragged { "▶" } else { " " };
         text.0 = format!(
             "{marker} {}\n{} 太阳\n{state}",
             plant.display_name, plant.price
         );
-        color.0 = if params.selected.0 == kind {
+        color.0 = if is_dragged {
             params.theme.card_selected_text
         } else if remaining > 0.0 || params.bank.amount < plant.price {
             params.theme.card_disabled_text
@@ -301,7 +469,11 @@ fn update_hud(mut params: HudParams) {
     for (panel, mut background, mut border) in &mut params.panels {
         let kind = panel.0;
         let plant = params.catalog.plant(kind);
-        let is_selected = params.selected.0 == kind;
+        let is_selected = params
+            .drag
+            .active
+            .as_ref()
+            .is_some_and(|active| active.kind == kind);
         let unavailable = !params.cards.ready(kind) || params.bank.amount < plant.price;
         background.0 = if is_selected {
             params.theme.card_selected_background
@@ -316,6 +488,23 @@ fn update_hud(mut params: HudParams) {
             params.theme.card_border
         });
     }
+
+    let (mut shovel_background, mut shovel_border) = params.shovel_panel.into_inner();
+    shovel_background.0 = if params.shovel.active {
+        params.theme.card_selected_background
+    } else {
+        params.theme.card_background
+    };
+    *shovel_border = BorderColor::all(if params.shovel.active {
+        params.theme.card_selected_border
+    } else {
+        params.theme.card_border
+    });
+    params.shovel_label.into_inner().0 = if params.shovel.active {
+        params.theme.card_selected_text
+    } else {
+        params.theme.card_text
+    };
 }
 
 /// 显示中文胜利结果页。
@@ -404,7 +593,7 @@ fn show_result(
 
 fn control_help(controls: &ControlBindings) -> String {
     let text = format!(
-        "操作说明\n点击植物卡片  选择植物\n{}  放置植物 / 收集太阳\n{}  重新开始",
+        "操作说明\n按住植物卡片并拖到草坪  种植\n点击铲子后再点植物  铲除\n{}  收集太阳\n{}  重新开始",
         mouse_label(controls.place_or_collect),
         key_label(controls.restart),
     );

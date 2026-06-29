@@ -4,8 +4,7 @@
 //!
 //! - **波次生成**：按时间线自动生成僵尸（[`tick_wave_timeline`]）
 //! - **太阳经济**：太阳存款（[`SunBank`]）与植物卡片冷却（[`PlantCards`]）
-//! - **植物选择**：点击 UI 卡片或按数字键切换当前选中的植物（[`SelectedPlant`]）
-//! - **鼠标交互**：左键点击收集太阳、在棋盘上放置植物（[`handle_world_clicks`]）
+//! - **鼠标交互**：左键点击收集太阳、使用铲子移除植物（[`handle_world_clicks`]）
 //! - **胜负判定**：僵尸突破房子左侧 → 失败；清空所有僵尸 → 胜利
 //! - **太阳动画**：太阳拾取物上下浮动并旋转
 
@@ -22,7 +21,7 @@ use crate::game::combat::{EntityDied, Team};
 use crate::game::config::GameplaySettings;
 use crate::game::controls::ControlBindings;
 use crate::game::lawn::{CellOccupancy, LawnLayout};
-use crate::game::plant::{PlantKind, PlantRequest};
+use crate::game::plant::PlantKind;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
@@ -41,11 +40,10 @@ impl Plugin for LevelPlugin {
                 .unwrap_or_else(|error| panic!("failed to load {DEFAULT_LEVEL_PATH}: {error}"));
             app.insert_resource(definition);
         }
-        let (starting_sun, default_plant, initial_cards) = {
+        let (starting_sun, initial_cards) = {
             let definition = app.world().resource::<LevelDefinition>();
             (
                 definition.starting_sun,
-                definition.default_plant,
                 definition
                     .cards
                     .iter()
@@ -56,8 +54,8 @@ impl Plugin for LevelPlugin {
         app.insert_resource(SunBank {
             amount: starting_sun,
         })
-        .insert_resource(SelectedPlant(default_plant))
         .insert_resource(PlantCards(initial_cards))
+        .init_resource::<ShovelMode>()
         .init_resource::<LevelRuntime>()
         .add_message::<SpawnSun>()
         .add_message::<LevelWon>()
@@ -97,8 +95,7 @@ impl Plugin for LevelPlugin {
         )
         .add_systems(
             Update,
-            (select_plant_card, handle_world_clicks, animate_sun_pickups)
-                .run_if(in_state(GameState::Playing)),
+            (handle_world_clicks, animate_sun_pickups).run_if(in_state(GameState::Playing)),
         );
     }
 }
@@ -112,11 +109,10 @@ pub enum LevelSetupSet {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct LevelId(pub String);
 
-/// 卡片列表是顺序、快捷键与植物映射的唯一来源。
+/// 卡片列表是显示顺序与植物映射的唯一来源。
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct PlantCardDefinition {
     pub slot: u8,
-    pub key: KeyCode,
     pub plant: PlantKind,
 }
 
@@ -143,7 +139,6 @@ pub struct LevelDefinition {
     pub starting_sun: u32,
     pub lawn: LawnLayout,
     pub cards: Vec<PlantCardDefinition>,
-    pub default_plant: PlantKind,
     /// 保留波次边界的僵尸生成计划。
     pub waves: Vec<ZombieWaveDefinition>,
 }
@@ -156,7 +151,6 @@ struct LevelConfig {
     starting_sun: u32,
     lawn: LawnConfig,
     cards: Vec<PlantCardConfig>,
-    default_plant: PlantKind,
     waves: Vec<WaveConfig>,
 }
 
@@ -217,16 +211,11 @@ impl LevelDefinition {
         let cards = config
             .cards
             .into_iter()
-            .map(|card| {
-                Ok(PlantCardDefinition {
-                    slot: card.slot,
-                    key: card_key(card.slot).ok_or_else(|| {
-                        format!("card slot {} has no numeric shortcut", card.slot)
-                    })?,
-                    plant: card.plant,
-                })
+            .map(|card| PlantCardDefinition {
+                slot: card.slot,
+                plant: card.plant,
             })
-            .collect::<Result<Vec<_>, String>>()?;
+            .collect();
         let waves = expand_waves(config.waves)?;
         Ok(Self {
             id: LevelId(config.id),
@@ -234,7 +223,6 @@ impl LevelDefinition {
             starting_sun: config.starting_sun,
             lawn,
             cards,
-            default_plant: config.default_plant,
             waves,
         })
     }
@@ -271,20 +259,10 @@ impl LevelDefinition {
             }
             if self.cards[..index]
                 .iter()
-                .any(|other| other.key == card.key)
+                .any(|other| other.plant == card.plant)
             {
-                return Err(format!("duplicate card key {:?}", card.key));
+                return Err(format!("duplicate plant card {:?}", card.plant));
             }
-        }
-        if !self
-            .cards
-            .iter()
-            .any(|card| card.plant == self.default_plant)
-        {
-            return Err(format!(
-                "default plant {:?} is not present in cards",
-                self.default_plant
-            ));
         }
         if self.waves.is_empty() {
             return Err("level must contain at least one zombie wave".into());
@@ -360,21 +338,6 @@ fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieWaveDefinition>, Str
     Ok(definitions)
 }
 
-fn card_key(slot: u8) -> Option<KeyCode> {
-    Some(match slot {
-        1 => KeyCode::Digit1,
-        2 => KeyCode::Digit2,
-        3 => KeyCode::Digit3,
-        4 => KeyCode::Digit4,
-        5 => KeyCode::Digit5,
-        6 => KeyCode::Digit6,
-        7 => KeyCode::Digit7,
-        8 => KeyCode::Digit8,
-        9 => KeyCode::Digit9,
-        _ => return None,
-    })
-}
-
 /// 关卡运行时数据资源，追踪游戏进行中的状态。
 #[derive(Resource, Debug, Default)]
 pub struct LevelRuntime {
@@ -433,9 +396,11 @@ impl PlantCards {
     }
 }
 
-/// 当前选中的植物资源，由 UI 卡片或数字键切换。
-#[derive(Resource, Debug)]
-pub struct SelectedPlant(pub PlantKind);
+/// 铲子是否处于等待选择植物的状态。
+#[derive(Resource, Debug, Default)]
+pub struct ShovelMode {
+    pub active: bool,
+}
 
 /// 太阳拾取物组件，标记掉落的太阳实体。
 #[derive(Component, Debug)]
@@ -471,7 +436,7 @@ fn reset_level_runtime(
     mut runtime: ResMut<LevelRuntime>,
     mut bank: ResMut<SunBank>,
     mut cards: ResMut<PlantCards>,
-    mut selected: ResMut<SelectedPlant>,
+    mut shovel: ResMut<ShovelMode>,
     mut layout: ResMut<LawnLayout>,
     mut occupancy: ResMut<CellOccupancy>,
 ) {
@@ -482,7 +447,7 @@ fn reset_level_runtime(
         .iter()
         .map(|card| (card.plant, Duration::ZERO))
         .collect();
-    selected.0 = definition.default_plant;
+    shovel.active = false;
     *layout = definition.lawn.clone();
     occupancy.0.clear();
 }
@@ -558,20 +523,6 @@ fn spawn_sun_pickups(
     }
 }
 
-/// 根据当前关卡卡片定义切换选中的植物种类。
-fn select_plant_card(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    definition: Res<LevelDefinition>,
-    mut selected: ResMut<SelectedPlant>,
-) {
-    for card in &definition.cards {
-        if keyboard.just_pressed(card.key) {
-            selected.0 = card.plant;
-            break;
-        }
-    }
-}
-
 /// 自定义 SystemParam，封装鼠标点击所需的全部系统参数。
 #[derive(SystemParam)]
 struct WorldClickParams<'w, 's> {
@@ -582,11 +533,11 @@ struct WorldClickParams<'w, 's> {
     window: Single<'w, 's, &'static Window>,
     camera: Single<'w, 's, (&'static Camera, &'static GlobalTransform)>,
     layout: Res<'w, LawnLayout>,
-    selected: Res<'w, SelectedPlant>,
     ui_buttons: Query<'w, 's, &'static Interaction, With<Button>>,
     pickups: Query<'w, 's, (Entity, &'static Transform, &'static SunPickup)>,
     bank: ResMut<'w, SunBank>,
-    plant: MessageWriter<'w, PlantRequest>,
+    occupancy: ResMut<'w, CellOccupancy>,
+    shovel: ResMut<'w, ShovelMode>,
 }
 
 /// 处理鼠标左键点击。
@@ -594,7 +545,7 @@ struct WorldClickParams<'w, 's> {
 /// 逻辑顺序：
 /// 1. 将屏幕坐标转换为世界坐标
 /// 2. 先检测是否点到了太阳拾取物（28 像素范围内），是则收集并销毁
-/// 3. 否则检测是否点到了棋盘格子，是则发出 [`PlantRequest`] 放置当前选中的植物
+/// 3. 若铲子已启用，则移除点击格子中的植物
 fn handle_world_clicks(mut params: WorldClickParams) {
     if !params.mouse.just_pressed(params.controls.place_or_collect) {
         return;
@@ -624,12 +575,12 @@ fn handle_world_clicks(mut params: WorldClickParams) {
         return;
     }
 
-    // 再检测棋盘格子点击
-    if let Some(cell) = params.layout.world_to_cell(world) {
-        params.plant.write(PlantRequest {
-            kind: params.selected.0,
-            cell,
-        });
+    if params.shovel.active
+        && let Some(cell) = params.layout.world_to_cell(world)
+        && let Some(entity) = params.occupancy.0.remove(&cell)
+    {
+        params.commands.entity(entity).despawn();
+        params.shovel.active = false;
     }
 }
 
@@ -666,9 +617,7 @@ fn validate_level_definition(
     definition
         .validate(&catalog)
         .expect("invalid loaded level definition");
-    controls
-        .validate(definition.cards.iter().map(|card| card.key))
-        .expect("invalid control bindings");
+    controls.validate().expect("invalid control bindings");
 }
 
 /// 胜利判定：所有波次已生成完毕且场上无存活僵尸，则进入 Victory 状态。
@@ -780,15 +729,15 @@ mod tests {
     }
 
     #[test]
-    fn validation_rejects_duplicate_keys_and_invalid_lawn() {
+    fn validation_rejects_duplicate_cards_and_invalid_lawn() {
         let catalog = ContentCatalog::default();
         let mut level = LevelDefinition::default();
-        level.cards[1].key = level.cards[0].key;
+        level.cards[1].plant = level.cards[0].plant;
         assert!(
             level
                 .validate(&catalog)
                 .unwrap_err()
-                .contains("duplicate card key")
+                .contains("duplicate plant card")
         );
         level = LevelDefinition::default();
         level.lawn.cell_size.y = 0.0;
@@ -804,7 +753,6 @@ mod tests {
     fn reset_uses_the_current_level_definition() {
         let definition = LevelDefinition {
             starting_sun: 777,
-            default_plant: PlantKind::WallNut,
             lawn: LawnLayout {
                 columns: 7,
                 ..default()
@@ -823,7 +771,7 @@ mod tests {
             })
             .insert_resource(SunBank { amount: 1 })
             .insert_resource(PlantCards::default())
-            .insert_resource(SelectedPlant(PlantKind::Sunflower))
+            .insert_resource(ShovelMode { active: true })
             .insert_resource(LawnLayout::default())
             .insert_resource(CellOccupancy::default())
             .add_systems(Update, reset_level_runtime);
@@ -831,10 +779,7 @@ mod tests {
         app.update();
 
         assert_eq!(app.world().resource::<SunBank>().amount, 777);
-        assert_eq!(
-            app.world().resource::<SelectedPlant>().0,
-            PlantKind::WallNut
-        );
+        assert!(!app.world().resource::<ShovelMode>().active);
         assert_eq!(app.world().resource::<LawnLayout>().columns, 7);
         assert_eq!(app.world().resource::<LevelRuntime>().next_wave, 0);
         assert_eq!(app.world().resource::<LevelRuntime>().next_spawn_in_wave, 0);

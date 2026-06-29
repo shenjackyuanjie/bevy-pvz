@@ -14,7 +14,6 @@
         (slot: 4, plant: GatlingPea),
         (slot: 5, plant: WallNut),
     ],
-    default_plant: Peashooter,
     waves: [
         (delay: 4.0, kind: Basic, count: 2, interval: 4.5),
         (delay: 5.0, kind: Basic, count: 3, interval: 4.0),
