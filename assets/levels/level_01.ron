@@ -14,9 +14,13 @@
     ],
     default_plant: Peashooter,
     waves: [
-        (delay: 4.0, kind: Basic, count: 3, interval: 5.0),
-        (delay: 6.0, kind: Basic, count: 3, interval: 5.5),
-        (delay: 5.0, kind: Basic, count: 3, interval: 5.0),
-        (delay: 1.5, kind: Basic, count: 2, interval: 5.5),
+        (delay: 4.0, kind: Basic, count: 2, interval: 4.5),
+        (delay: 5.0, kind: Basic, count: 3, interval: 4.0),
+        (delay: 5.0, kind: Basic, count: 3, interval: 3.8),
+        (delay: 4.5, kind: Basic, count: 4, interval: 3.5),
+        (delay: 4.0, kind: Basic, count: 4, interval: 3.2),
+        (delay: 3.5, kind: Basic, count: 5, interval: 3.0),
+        (delay: 3.0, kind: Basic, count: 5, interval: 2.8),
+        (delay: 2.5, kind: Basic, count: 6, interval: 2.5),
     ],
 )

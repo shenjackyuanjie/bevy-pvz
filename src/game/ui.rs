@@ -239,8 +239,8 @@ fn update_hud(mut params: HudParams) {
     params.stats.0 = format!(
         "太阳  {}     波次  {} / {}     已消灭  {}     时间  {:.1} 秒",
         params.bank.amount,
-        params.runtime.next_spawn,
-        params.definition.spawns.len(),
+        params.runtime.waves_started(),
+        params.definition.waves.len(),
         params.runtime.defeated_zombies,
         params.runtime.elapsed.as_secs_f32(),
     );

@@ -129,6 +129,12 @@ pub struct ZombieSpawnDefinition {
     pub kind: ZombieKind,
 }
 
+/// 单个波次的全部僵尸生成点。RON 中每个 `waves` 数组项对应一个该结构。
+#[derive(Debug, Clone)]
+pub struct ZombieWaveDefinition {
+    pub spawns: Vec<ZombieSpawnDefinition>,
+}
+
 /// 关卡配置资源，定义所有僵尸波次。
 #[derive(Resource, Debug, Clone)]
 pub struct LevelDefinition {
@@ -138,8 +144,8 @@ pub struct LevelDefinition {
     pub lawn: LawnLayout,
     pub cards: Vec<PlantCardDefinition>,
     pub default_plant: PlantKind,
-    /// 按时间排序的僵尸生成队列。
-    pub spawns: Vec<ZombieSpawnDefinition>,
+    /// 保留波次边界的僵尸生成计划。
+    pub waves: Vec<ZombieWaveDefinition>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -221,7 +227,7 @@ impl LevelDefinition {
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        let spawns = expand_waves(config.waves)?;
+        let waves = expand_waves(config.waves)?;
         Ok(Self {
             id: LevelId(config.id),
             display_name: config.display_name,
@@ -229,7 +235,7 @@ impl LevelDefinition {
             lawn,
             cards,
             default_plant: config.default_plant,
-            spawns,
+            waves,
         })
     }
 
@@ -280,31 +286,43 @@ impl LevelDefinition {
                 self.default_plant
             ));
         }
+        if self.waves.is_empty() {
+            return Err("level must contain at least one zombie wave".into());
+        }
         let mut previous = 0.0;
-        for (index, spawn) in self.spawns.iter().enumerate() {
-            if !spawn.at_seconds.is_finite() || spawn.at_seconds < 0.0 {
+        for (wave_index, wave) in self.waves.iter().enumerate() {
+            if wave.spawns.is_empty() {
                 return Err(format!(
-                    "spawn {index} has invalid time {}",
-                    spawn.at_seconds
+                    "wave {wave_index} must contain at least one zombie"
                 ));
             }
-            if index > 0 && spawn.at_seconds < previous {
-                return Err(format!("spawn timeline is not sorted at index {index}"));
+            for (spawn_index, spawn) in wave.spawns.iter().enumerate() {
+                if !spawn.at_seconds.is_finite() || spawn.at_seconds < 0.0 {
+                    return Err(format!(
+                        "wave {wave_index} spawn {spawn_index} has invalid time {}",
+                        spawn.at_seconds
+                    ));
+                }
+                if spawn.at_seconds < previous {
+                    return Err(format!(
+                        "spawn timeline is not sorted at wave {wave_index} spawn {spawn_index}"
+                    ));
+                }
+                if !catalog.contains_zombie(spawn.kind) {
+                    return Err(format!(
+                        "wave {wave_index} spawn {spawn_index} references missing zombie {:?}",
+                        spawn.kind
+                    ));
+                }
+                previous = spawn.at_seconds;
             }
-            if !catalog.contains_zombie(spawn.kind) {
-                return Err(format!(
-                    "spawn {index} references missing zombie {:?}",
-                    spawn.kind
-                ));
-            }
-            previous = spawn.at_seconds;
         }
         Ok(())
     }
 }
 
-fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieSpawnDefinition>, String> {
-    let mut spawns = Vec::new();
+fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieWaveDefinition>, String> {
+    let mut definitions = Vec::with_capacity(waves.len());
     let mut elapsed = 0.0;
     for (index, wave) in waves.into_iter().enumerate() {
         if !wave.delay.is_finite() || wave.delay < 0.0 {
@@ -327,6 +345,7 @@ fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieSpawnDefinition>, St
         }
 
         elapsed += wave.delay;
+        let mut spawns = Vec::with_capacity(wave.count as usize);
         for spawn_index in 0..wave.count {
             spawns.push(ZombieSpawnDefinition {
                 at_seconds: elapsed,
@@ -336,8 +355,9 @@ fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieSpawnDefinition>, St
                 elapsed += wave.interval;
             }
         }
+        definitions.push(ZombieWaveDefinition { spawns });
     }
-    Ok(spawns)
+    Ok(definitions)
 }
 
 fn card_key(slot: u8) -> Option<KeyCode> {
@@ -360,10 +380,18 @@ fn card_key(slot: u8) -> Option<KeyCode> {
 pub struct LevelRuntime {
     /// 关卡已流逝的时间。
     pub elapsed: Duration,
-    /// 下一个要生成的波次索引（= 已生成的波次数）。
-    pub next_spawn: usize,
+    /// 当前等待生成的波次索引。
+    pub next_wave: usize,
+    /// 当前波次中下一个等待生成的僵尸索引。
+    pub next_spawn_in_wave: usize,
     /// 已消灭的僵尸总数。
     pub defeated_zombies: usize,
+}
+
+impl LevelRuntime {
+    pub fn waves_started(&self) -> usize {
+        self.next_wave + usize::from(self.next_spawn_in_wave > 0)
+    }
 }
 
 /// 太阳银行资源，存储玩家当前拥有的太阳数量。
@@ -467,11 +495,18 @@ fn tick_wave_timeline(
     mut spawn: MessageWriter<SpawnZombie>,
 ) {
     runtime.elapsed += time.delta();
-    while let Some(next) = definition.spawns.get(runtime.next_spawn)
-        && runtime.elapsed.as_secs_f32() >= next.at_seconds
-    {
-        spawn.write(SpawnZombie { kind: next.kind });
-        runtime.next_spawn += 1;
+    while let Some(wave) = definition.waves.get(runtime.next_wave) {
+        while let Some(next) = wave.spawns.get(runtime.next_spawn_in_wave)
+            && runtime.elapsed.as_secs_f32() >= next.at_seconds
+        {
+            spawn.write(SpawnZombie { kind: next.kind });
+            runtime.next_spawn_in_wave += 1;
+        }
+        if runtime.next_spawn_in_wave < wave.spawns.len() {
+            break;
+        }
+        runtime.next_wave += 1;
+        runtime.next_spawn_in_wave = 0;
     }
 }
 
@@ -644,7 +679,7 @@ fn check_victory(
     mut won: MessageWriter<LevelWon>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    if runtime.next_spawn == definition.spawns.len() && zombies.is_empty() {
+    if runtime.next_wave == definition.waves.len() && zombies.is_empty() {
         won.write(LevelWon);
         next_state.set(GameState::Victory);
     }
@@ -705,9 +740,11 @@ mod tests {
             .insert_resource(LawnLayout::default())
             .insert_resource(LevelRuntime::default())
             .insert_resource(LevelDefinition {
-                spawns: vec![ZombieSpawnDefinition {
-                    at_seconds: 0.0,
-                    kind: ZombieKind::Basic,
+                waves: vec![ZombieWaveDefinition {
+                    spawns: vec![ZombieSpawnDefinition {
+                        at_seconds: 0.0,
+                        kind: ZombieKind::Basic,
+                    }],
                 }],
                 ..default()
             })
@@ -725,7 +762,7 @@ mod tests {
 
         app.world_mut().run_schedule(FixedUpdate);
 
-        assert_eq!(app.world().resource::<LevelRuntime>().next_spawn, 1);
+        assert_eq!(app.world().resource::<LevelRuntime>().next_wave, 1);
         let zombie_count = app
             .world_mut()
             .query_filtered::<Entity, With<Zombie>>()
@@ -779,7 +816,8 @@ mod tests {
         app.insert_resource(definition)
             .insert_resource(LevelRuntime {
                 elapsed: Duration::from_secs(9),
-                next_spawn: 2,
+                next_wave: 2,
+                next_spawn_in_wave: 1,
                 defeated_zombies: 1,
             })
             .insert_resource(SunBank { amount: 1 })
@@ -797,7 +835,8 @@ mod tests {
             PlantKind::WallNut
         );
         assert_eq!(app.world().resource::<LawnLayout>().columns, 7);
-        assert_eq!(app.world().resource::<LevelRuntime>().next_spawn, 0);
+        assert_eq!(app.world().resource::<LevelRuntime>().next_wave, 0);
+        assert_eq!(app.world().resource::<LevelRuntime>().next_spawn_in_wave, 0);
         assert_eq!(app.world().resource::<PlantCards>().0.len(), 3);
     }
 }
