@@ -569,13 +569,15 @@ fn handle_world_clicks(mut params: WorldClickParams) {
         return;
     };
 
-    // 先检测太阳拾取物点击
-    if let Some((entity, _, pickup)) = params.pickups.iter().find(|(_, transform, _)| {
-        transform.translation.truncate().distance(world) <= params.settings.sun_pickup_radius
-    }) {
-        params.bank.amount += pickup.value;
-        params.commands.entity(entity).despawn();
+    // 一次点击收集鼠标附近的全部阳光，避免重叠阳光需要反复点击。
+    let mut collected = 0;
+    for (entity, transform, pickup) in &params.pickups {
+        if transform.translation.truncate().distance(world) <= params.settings.sun_pickup_radius {
+            collected += pickup.value;
+            params.commands.entity(entity).despawn();
+        }
     }
+    params.bank.amount += collected;
 }
 
 /// 太阳拾取物动画：上下浮动。名牌需要保持水平，因此不旋转整个实体。
