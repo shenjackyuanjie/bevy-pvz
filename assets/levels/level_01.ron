@@ -3,7 +3,7 @@
     display_name: "前院防线",
     starting_sun: 250,
     lawn: (
-        columns: 12,
+        columns: 9,
         cell_size: (90.0, 90.0),
         center_x: -50.0,
         path_y: -180.0,

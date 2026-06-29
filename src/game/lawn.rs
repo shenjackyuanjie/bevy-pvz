@@ -14,11 +14,14 @@ use bevy::prelude::*;
 use crate::game::level::LevelSetupSet;
 use crate::game::state::{GameState, LevelEntity};
 
-/// 草坪列数：12 列。
-pub const LAWN_COLUMNS: u8 = 12;
+/// 草坪列数：9 列。
+pub const LAWN_COLUMNS: u8 = 9;
 
 /// 空中种植格所在的两行；底层草坪为第 0 行，第 1 行刻意留空。
-pub const AIR_ROWS: [u8; 2] = [2, 3];
+pub const AIR_ROWS: [i8; 2] = [2, 3];
+
+/// 豌豆射手专用行；与底层草坪之间的第 -1 行刻意留空。
+pub const PEASHOOTER_ROW: i8 = -2;
 
 /// 草坪相对世界中心向左偏移 50 像素。
 pub const LAWN_CENTER_X: f32 = -50.0;
@@ -47,7 +50,7 @@ impl Plugin for LawnPlugin {
 /// 提供 `world_to_cell`（世界坐标 → 格子坐标）和 `cell_center`（格子坐标 → 世界坐标）等换算方法。
 #[derive(Resource, Debug, Clone)]
 pub struct LawnLayout {
-    /// 底层草坪列数（默认 12）。
+    /// 底层草坪列数（默认 9）。
     pub columns: u8,
     /// 每个格子的尺寸（默认 90×90 像素）。
     pub cell_size: Vec2,
@@ -72,14 +75,14 @@ impl Default for LawnLayout {
 impl LawnLayout {
     /// 将世界坐标转换为格子坐标。
     ///
-    /// 返回 `Some(GridCell)` 如果坐标落在底层或六个空中格内，否则返回 `None`。
+    /// 返回 `Some(GridCell)` 如果坐标落在底层、豌豆专用行或六个空中格内。
     pub fn world_to_cell(&self, world: Vec2) -> Option<GridCell> {
         let local = world - self.origin;
-        if local.x < 0.0 || local.y < 0.0 {
+        if local.x < 0.0 {
             return None;
         }
         let column = (local.x / self.cell_size.x).floor() as u8;
-        let row = (local.y / self.cell_size.y).floor() as u8;
+        let row = (local.y / self.cell_size.y).floor() as i8;
         let cell = GridCell { column, row };
         self.contains(cell).then_some(cell)
     }
@@ -93,12 +96,12 @@ impl LawnLayout {
             )
     }
 
-    /// 检查格子是否属于底层草坪或六个空中种植格。
+    /// 检查格子是否属于底层草坪、豌豆专用行或六个空中种植格。
     pub fn contains(&self, cell: GridCell) -> bool {
         if cell.column >= self.columns {
             return false;
         }
-        if cell.row == 0 {
+        if cell.is_ground() || cell.is_peashooter_row() {
             return true;
         }
         AIR_ROWS.contains(&cell.row)
@@ -123,8 +126,8 @@ impl LawnLayout {
 pub struct GridCell {
     /// 列号（0 到 `columns - 1`）。
     pub column: u8,
-    /// 行号；0 是僵尸道路，2 和 3 是空中种植位。
-    pub row: u8,
+    /// 行号；0 是僵尸道路，-2 是豌豆专用行，2 和 3 是空中种植位。
+    pub row: i8,
 }
 
 impl GridCell {
@@ -136,6 +139,11 @@ impl GridCell {
     /// 是否位于空中种植格所在的行。
     pub fn is_elevated(self) -> bool {
         AIR_ROWS.contains(&self.row)
+    }
+
+    /// 是否位于下方的豌豆射手专用行。
+    pub fn is_peashooter_row(self) -> bool {
+        self.row == PEASHOOTER_ROW
     }
 }
 
@@ -157,7 +165,7 @@ impl CellOccupancy {
 #[derive(Component)]
 struct LawnVisual;
 
-/// 绘制底层道路、六个空中种植格，以及左侧的房子边界线。
+/// 绘制底层道路、豌豆专用行、六个空中种植格，以及左侧的房子边界线。
 ///
 /// 格子颜色为深浅交替的绿色，模拟原版 PvZ 草坪风格。
 /// 房子边线是一条深红色竖线，表示僵尸突破即失败的边界。
@@ -178,6 +186,25 @@ fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
         ));
     }
 
+    for column in 0..layout.columns {
+        let cell = GridCell {
+            column,
+            row: PEASHOOTER_ROW,
+        };
+        let color = if column % 2 == 0 {
+            Color::srgb(0.20, 0.46, 0.19)
+        } else {
+            Color::srgb(0.24, 0.52, 0.21)
+        };
+        commands.spawn((
+            Sprite::from_color(color, layout.cell_size - Vec2::splat(2.0)),
+            Transform::from_translation(layout.cell_center(cell).extend(-10.0)),
+            LawnVisual,
+            LevelEntity,
+            Name::new(format!("Peashooter lawn cell {column}")),
+        ));
+    }
+
     for column in [
         0,
         layout.columns.saturating_sub(2),
@@ -188,7 +215,7 @@ fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
             if !layout.contains(cell) {
                 continue;
             }
-            let color = if (column + row) % 2 == 0 {
+            let color = if (i16::from(column) + i16::from(row)) % 2 == 0 {
                 Color::srgb(0.36, 0.68, 0.31)
             } else {
                 Color::srgb(0.31, 0.62, 0.27)
@@ -234,6 +261,13 @@ mod tests {
                 assert_eq!(layout.world_to_cell(layout.cell_center(cell)), Some(cell));
             }
         }
+        for column in 0..layout.columns {
+            let cell = GridCell {
+                column,
+                row: PEASHOOTER_ROW,
+            };
+            assert_eq!(layout.world_to_cell(layout.cell_center(cell)), Some(cell));
+        }
     }
 
     #[test]
@@ -250,6 +284,10 @@ mod tests {
         let mut occupancy = CellOccupancy::default();
         assert_eq!(
             layout.world_to_cell(layout.origin + layout.cell_size * Vec2::new(0.5, 1.5)),
+            None
+        );
+        assert_eq!(
+            layout.world_to_cell(layout.origin + layout.cell_size * Vec2::new(0.5, -0.5)),
             None
         );
         assert_eq!(
