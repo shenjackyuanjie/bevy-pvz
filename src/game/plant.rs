@@ -17,6 +17,7 @@ use crate::game::catalog::{ColliderHalfSize, ContentCatalog, PlantBehavior};
 use crate::game::combat::{Dead, Health, Team};
 use crate::game::lawn::{CellOccupancy, GridCell, LawnLayout};
 use crate::game::level::{PlantCards, SpawnSun, SunBank};
+use crate::game::model::plant_model_parts;
 use crate::game::physics::plant_groups;
 use crate::game::projectile::{ProjectileKind, SpawnProjectile};
 use crate::game::schedule::GameSet;
@@ -109,9 +110,14 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
         params.cards.trigger(request.kind, &params.catalog);
         let position = params.layout.cell_center(request.cell);
         let label = &params.theme.plant_label;
-        // 色块继续承担碰撞与阵营辨识；子级中文名牌直接说明植物身份。
+        let font = params.assets.chinese_font.clone();
+        let model_parts = plant_model_parts(request.kind, 1.0);
+        // 透明根节点承担碰撞与逻辑，子级色块组成植物轮廓。
         let mut entity = params.commands.spawn((
-            Sprite::from_color(definition.visual.color, definition.visual.size),
+            Sprite::from_color(
+                definition.visual.color.with_alpha(0.0),
+                definition.visual.size,
+            ),
             Transform::from_translation(position.extend(1.0)),
             Plant,
             request.kind,
@@ -127,10 +133,20 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
             plant_groups(),
             crate::game::state::LevelEntity,
             Name::new(definition.display_name),
-            children![(
+        ));
+        entity.with_children(|parent| {
+            for part in model_parts {
+                parent.spawn((
+                    Sprite::from_color(part.color, part.size),
+                    Transform::from_xyz(part.offset.x, part.offset.y, part.z)
+                        .with_rotation(Quat::from_rotation_z(part.rotation)),
+                    Name::new(part.name),
+                ));
+            }
+            parent.spawn((
                 Text2d::new(definition.display_name),
                 TextFont {
-                    font: params.assets.chinese_font.clone(),
+                    font,
                     font_size: label.font_size,
                     ..default()
                 },
@@ -143,8 +159,8 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
                 },
                 Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
                 Name::new("植物名称"),
-            )],
-        ));
+            ));
+        });
 
         match definition.behavior {
             PlantBehavior::SunProducer {

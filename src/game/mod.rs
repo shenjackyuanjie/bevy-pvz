@@ -15,6 +15,7 @@ pub mod config;
 pub mod controls;
 pub mod lawn;
 pub mod level;
+pub mod model;
 pub mod physics;
 pub mod plant;
 pub mod projectile;

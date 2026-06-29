@@ -18,6 +18,7 @@ use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog};
 use crate::game::combat::{ApplyDamage, DamageKind, Health, Team};
 use crate::game::lawn::{GridCell, LawnLayout};
+use crate::game::model::zombie_model_parts;
 use crate::game::physics::zombie_groups;
 use crate::game::plant::Plant;
 use crate::game::schedule::GameSet;
@@ -137,10 +138,14 @@ pub(crate) fn spawn_zombies(
             .as_ref()
             .map(|assets| assets.chinese_font.clone())
             .unwrap_or_default();
-        // 名牌作为僵尸子实体，会自动跟随移动并在僵尸销毁时一并清理。
-        commands.spawn((
+        let model_parts = zombie_model_parts(request.kind, 1.0);
+        // 透明根节点承担碰撞与逻辑，子级色块、名牌和血条自动跟随。
+        let mut entity = commands.spawn((
             (
-                Sprite::from_color(definition.visual.color, definition.visual.size),
+                Sprite::from_color(
+                    definition.visual.color.with_alpha(0.0),
+                    definition.visual.size,
+                ),
                 Transform::from_translation(position.extend(2.0)),
                 Zombie {
                     speed: definition.speed,
@@ -167,60 +172,68 @@ pub(crate) fn spawn_zombies(
                 LevelEntity,
                 Name::new(definition.display_name),
             ),
-            children![
-                (
-                    Text2d::new(definition.scene_label),
-                    TextFont {
-                        font: font.clone(),
-                        font_size: label.font_size,
-                        ..default()
-                    },
-                    TextColor(label.text),
-                    TextBackgroundColor(label.background),
-                    TextLayout::new_with_justify(Justify::Center),
-                    Text2dShadow {
-                        offset: label.shadow_offset,
-                        color: label.shadow,
-                    },
-                    Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
-                    Name::new("僵尸名称"),
-                ),
-                (
-                    Sprite::from_color(Color::srgba(0.04, 0.04, 0.04, 0.9), Vec2::new(62.0, 10.0)),
-                    Transform::from_xyz(0.0, 49.0, 4.0),
-                    Visibility::Hidden,
-                    ZombieHealthBarBackground,
-                    Name::new("僵尸血条背景"),
-                ),
-                (
-                    Sprite::from_color(Color::srgb(0.2, 0.9, 0.18), Vec2::new(58.0, 6.0)),
-                    Transform::from_xyz(0.0, 49.0, 4.1),
-                    Visibility::Hidden,
-                    ZombieHealthBarFill,
-                    Name::new("僵尸血条"),
-                ),
-                (
-                    Text2d::new(format!(
-                        "{:.0} / {:.0}",
-                        definition.health, definition.health
-                    )),
-                    TextFont {
-                        font,
-                        font_size: 12.0,
-                        ..default()
-                    },
-                    TextColor(Color::WHITE),
-                    Text2dShadow {
-                        offset: Vec2::new(1.0, -1.0),
-                        color: Color::BLACK,
-                    },
-                    Transform::from_xyz(0.0, 63.0, 4.2),
-                    Visibility::Hidden,
-                    ZombieHealthText,
-                    Name::new("僵尸血量数值"),
-                )
-            ],
         ));
+        entity.with_children(|parent| {
+            for part in model_parts {
+                parent.spawn((
+                    Sprite::from_color(part.color, part.size),
+                    Transform::from_xyz(part.offset.x, part.offset.y, part.z)
+                        .with_rotation(Quat::from_rotation_z(part.rotation)),
+                    Name::new(part.name),
+                ));
+            }
+            parent.spawn((
+                Text2d::new(definition.scene_label),
+                TextFont {
+                    font: font.clone(),
+                    font_size: label.font_size,
+                    ..default()
+                },
+                TextColor(label.text),
+                TextBackgroundColor(label.background),
+                TextLayout::new_with_justify(Justify::Center),
+                Text2dShadow {
+                    offset: label.shadow_offset,
+                    color: label.shadow,
+                },
+                Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
+                Name::new("僵尸名称"),
+            ));
+            parent.spawn((
+                Sprite::from_color(Color::srgba(0.04, 0.04, 0.04, 0.9), Vec2::new(62.0, 10.0)),
+                Transform::from_xyz(0.0, 49.0, 4.0),
+                Visibility::Hidden,
+                ZombieHealthBarBackground,
+                Name::new("僵尸血条背景"),
+            ));
+            parent.spawn((
+                Sprite::from_color(Color::srgb(0.2, 0.9, 0.18), Vec2::new(58.0, 6.0)),
+                Transform::from_xyz(0.0, 49.0, 4.1),
+                Visibility::Hidden,
+                ZombieHealthBarFill,
+                Name::new("僵尸血条"),
+            ));
+            parent.spawn((
+                Text2d::new(format!(
+                    "{:.0} / {:.0}",
+                    definition.health, definition.health
+                )),
+                TextFont {
+                    font,
+                    font_size: 12.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                Text2dShadow {
+                    offset: Vec2::new(1.0, -1.0),
+                    color: Color::BLACK,
+                },
+                Transform::from_xyz(0.0, 63.0, 4.2),
+                Visibility::Hidden,
+                ZombieHealthText,
+                Name::new("僵尸血量数值"),
+            ));
+        });
     }
 }
 

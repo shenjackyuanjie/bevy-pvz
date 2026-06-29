@@ -10,6 +10,7 @@ use crate::game::combat::Dead;
 use crate::game::controls::{ControlBindings, key_label, mouse_label};
 use crate::game::lawn::{CellOccupancy, LawnLayout};
 use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, ShovelMode, SunBank};
+use crate::game::model::plant_model_parts;
 use crate::game::plant::{PlantKind, PlantRequest};
 use crate::game::projectile::ProjectileKind;
 use crate::game::state::{GameState, LevelEntity};
@@ -317,18 +318,28 @@ fn begin_plant_drag(
         if let Some(preview) = shovel.preview.take() {
             commands.entity(preview).despawn();
         }
-        let preview = commands
-            .spawn((
-                Sprite::from_color(
-                    definition.visual.color.with_alpha(0.72),
-                    definition.visual.size,
-                ),
-                Transform::from_xyz(0.0, 0.0, 30.0),
-                PlantDragPreview,
-                LevelEntity,
-                Name::new(format!("{}拖拽预览", definition.display_name)),
-            ))
-            .id();
+        let model_parts = plant_model_parts(card.0, 0.72);
+        let mut preview = commands.spawn((
+            Sprite::from_color(
+                definition.visual.color.with_alpha(0.0),
+                definition.visual.size,
+            ),
+            Transform::from_xyz(0.0, 0.0, 30.0),
+            PlantDragPreview,
+            LevelEntity,
+            Name::new(format!("{}拖拽预览", definition.display_name)),
+        ));
+        preview.with_children(|parent| {
+            for part in model_parts {
+                parent.spawn((
+                    Sprite::from_color(part.color, part.size),
+                    Transform::from_xyz(part.offset.x, part.offset.y, part.z)
+                        .with_rotation(Quat::from_rotation_z(part.rotation)),
+                    Name::new(part.name),
+                ));
+            }
+        });
+        let preview = preview.id();
         drag.active = Some(ActivePlantDrag {
             kind: card.0,
             preview,
