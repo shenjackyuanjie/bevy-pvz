@@ -8,7 +8,7 @@ use crate::game::assets::GameAssets;
 use crate::game::catalog::ContentCatalog;
 use crate::game::combat::Dead;
 use crate::game::controls::{ControlBindings, key_label, mouse_label};
-use crate::game::lawn::LawnLayout;
+use crate::game::lawn::{CellOccupancy, LawnLayout};
 use crate::game::level::{LevelDefinition, LevelRuntime, PlantCards, ShovelMode, SunBank};
 use crate::game::plant::{PlantKind, PlantRequest};
 use crate::game::projectile::ProjectileKind;
@@ -27,9 +27,11 @@ impl Plugin for GameUiPlugin {
                 Update,
                 (
                     begin_plant_drag,
-                    toggle_shovel,
+                    begin_shovel_drag,
                     follow_plant_drag,
+                    follow_shovel_drag,
                     finish_plant_drag,
+                    finish_shovel_drag,
                     update_hud,
                 )
                     .chain()
@@ -65,6 +67,10 @@ struct ShovelButtonLabel;
 #[derive(Component)]
 /// 标记跟随鼠标的植物拖拽预览。
 struct PlantDragPreview;
+
+#[derive(Component)]
+/// 标记跟随鼠标的铲子拖拽预览。
+struct ShovelDragPreview;
 
 #[derive(Debug)]
 struct ActivePlantDrag {
@@ -246,7 +252,7 @@ fn setup_hud(
                             Name::new("铲子按钮"),
                         ))
                         .with_child((
-                            Text::new("铲子\n移除植物\n点击启用"),
+                            Text::new("铲子\n移除植物\n按住拖拽"),
                             TextFont {
                                 font: font.clone(),
                                 font_size: theme.card_font_size,
@@ -308,7 +314,9 @@ fn begin_plant_drag(
         if !cooldowns.ready(card.0) || bank.amount < definition.price {
             continue;
         }
-        shovel.active = false;
+        if let Some(preview) = shovel.preview.take() {
+            commands.entity(preview).despawn();
+        }
         let preview = commands
             .spawn((
                 Sprite::from_color(
@@ -329,8 +337,8 @@ fn begin_plant_drag(
     }
 }
 
-/// 铲子按钮在启用和取消之间切换，并取消可能存在的植物拖拽。
-fn toggle_shovel(
+/// 按下铲子按钮时创建铲子形状，并取消可能存在的植物拖拽。
+fn begin_shovel_drag(
     mut commands: Commands,
     buttons: Query<&Interaction, (With<ShovelButtonPanel>, Changed<Interaction>)>,
     mut shovel: ResMut<ShovelMode>,
@@ -345,7 +353,42 @@ fn toggle_shovel(
     if let Some(active) = drag.active.take() {
         commands.entity(active.preview).despawn();
     }
-    shovel.active = !shovel.active;
+    if let Some(preview) = shovel.preview.take() {
+        commands.entity(preview).despawn();
+    }
+
+    let preview = commands
+        .spawn((
+            Transform::from_xyz(0.0, 0.0, 31.0).with_rotation(Quat::from_rotation_z(-0.35)),
+            Visibility::Visible,
+            ShovelDragPreview,
+            LevelEntity,
+            Name::new("铲子拖拽预览"),
+            children![
+                (
+                    Sprite::from_color(Color::srgb(0.45, 0.24, 0.09), Vec2::new(9.0, 62.0)),
+                    Transform::from_xyz(0.0, 13.0, 0.0),
+                    Name::new("铲柄"),
+                ),
+                (
+                    Sprite::from_color(Color::srgb(0.33, 0.16, 0.06), Vec2::new(30.0, 8.0)),
+                    Transform::from_xyz(0.0, 46.0, 0.1),
+                    Name::new("铲子握把"),
+                ),
+                (
+                    Sprite::from_color(Color::srgba(0.72, 0.76, 0.8, 0.86), Vec2::new(34.0, 30.0)),
+                    Transform::from_xyz(0.0, -31.0, 0.1),
+                    Name::new("铲头"),
+                ),
+                (
+                    Sprite::from_color(Color::srgba(0.88, 0.9, 0.92, 0.9), Vec2::new(38.0, 7.0)),
+                    Transform::from_xyz(0.0, -17.0, 0.2),
+                    Name::new("铲肩"),
+                ),
+            ],
+        ))
+        .id();
+    shovel.preview = Some(preview);
 }
 
 /// 让植物预览持续跟随鼠标的世界坐标。
@@ -366,6 +409,29 @@ fn follow_plant_drag(
         return;
     };
     if let Ok(mut transform) = previews.get_mut(active.preview) {
+        transform.translation.x = world.x;
+        transform.translation.y = world.y;
+    }
+}
+
+/// 让铲子形状持续跟随鼠标的世界坐标。
+fn follow_shovel_drag(
+    shovel: Res<ShovelMode>,
+    window: Single<&Window>,
+    camera: Single<(&Camera, &GlobalTransform)>,
+    mut previews: Query<&mut Transform, With<ShovelDragPreview>>,
+) {
+    let Some(preview) = shovel.preview else {
+        return;
+    };
+    let Some(cursor) = window.cursor_position() else {
+        return;
+    };
+    let (camera, camera_transform) = *camera;
+    let Ok(world) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+        return;
+    };
+    if let Ok(mut transform) = previews.get_mut(preview) {
         transform.translation.x = world.x;
         transform.translation.y = world.y;
     }
@@ -404,6 +470,41 @@ fn finish_plant_drag(mut params: FinishPlantDragParams) {
             kind: active.kind,
             cell,
         });
+    }
+}
+
+/// 鼠标松开时销毁铲子预览；落点有植物时直接铲除，不返还阳光。
+#[derive(SystemParam)]
+struct FinishShovelDragParams<'w, 's> {
+    commands: Commands<'w, 's>,
+    mouse: Res<'w, ButtonInput<MouseButton>>,
+    controls: Res<'w, ControlBindings>,
+    window: Single<'w, 's, &'static Window>,
+    camera: Single<'w, 's, (&'static Camera, &'static GlobalTransform)>,
+    layout: Res<'w, LawnLayout>,
+    occupancy: ResMut<'w, CellOccupancy>,
+    shovel: ResMut<'w, ShovelMode>,
+}
+
+fn finish_shovel_drag(mut params: FinishShovelDragParams) {
+    if !params.mouse.just_released(params.controls.place_or_collect) {
+        return;
+    }
+    let Some(preview) = params.shovel.preview.take() else {
+        return;
+    };
+    params.commands.entity(preview).despawn();
+    let Some(cursor) = params.window.cursor_position() else {
+        return;
+    };
+    let (camera, camera_transform) = *params.camera;
+    let Ok(world) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+        return;
+    };
+    if let Some(cell) = params.layout.world_to_cell(world)
+        && let Some(plant) = params.occupancy.0.remove(&cell)
+    {
+        params.commands.entity(plant).despawn();
     }
 }
 
@@ -490,17 +591,17 @@ fn update_hud(mut params: HudParams) {
     }
 
     let (mut shovel_background, mut shovel_border) = params.shovel_panel.into_inner();
-    shovel_background.0 = if params.shovel.active {
+    shovel_background.0 = if params.shovel.active() {
         params.theme.card_selected_background
     } else {
         params.theme.card_background
     };
-    *shovel_border = BorderColor::all(if params.shovel.active {
+    *shovel_border = BorderColor::all(if params.shovel.active() {
         params.theme.card_selected_border
     } else {
         params.theme.card_border
     });
-    params.shovel_label.into_inner().0 = if params.shovel.active {
+    params.shovel_label.into_inner().0 = if params.shovel.active() {
         params.theme.card_selected_text
     } else {
         params.theme.card_text
@@ -593,7 +694,7 @@ fn show_result(
 
 fn control_help(controls: &ControlBindings) -> String {
     let text = format!(
-        "操作说明\n按住植物卡片并拖到草坪  种植\n点击铲子后再点植物  铲除\n{}  收集太阳\n{}  重新开始",
+        "操作说明\n按住植物卡片并拖到草坪  种植\n按住铲子并拖到植物  铲除\n{}  收集太阳\n{}  重新开始",
         mouse_label(controls.place_or_collect),
         key_label(controls.restart),
     );

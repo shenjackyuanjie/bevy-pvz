@@ -64,7 +64,7 @@ struct ActionTimer(Timer);
 
 /// 放置植物的请求消息。
 ///
-/// 由鼠标点击处理系统（`handle_world_clicks`）发送，
+/// 由植物拖拽结束系统发送，
 /// [`place_plants`] 系统消费并执行实际放置。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct PlantRequest {

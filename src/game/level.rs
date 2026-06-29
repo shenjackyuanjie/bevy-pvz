@@ -4,7 +4,7 @@
 //!
 //! - **波次生成**：按时间线自动生成僵尸（[`tick_wave_timeline`]）
 //! - **太阳经济**：太阳存款（[`SunBank`]）与植物卡片冷却（[`PlantCards`]）
-//! - **鼠标交互**：左键点击收集太阳、使用铲子移除植物（[`handle_world_clicks`]）
+//! - **鼠标交互**：左键点击收集太阳（[`handle_world_clicks`]）
 //! - **胜负判定**：僵尸突破房子左侧 → 失败；清空所有僵尸 → 胜利
 //! - **太阳动画**：太阳拾取物上下浮动并旋转
 
@@ -397,10 +397,16 @@ impl PlantCards {
     }
 }
 
-/// 铲子是否处于等待选择植物的状态。
+/// 当前正在拖拽的铲子预览实体。
 #[derive(Resource, Debug, Default)]
 pub struct ShovelMode {
-    pub active: bool,
+    pub preview: Option<Entity>,
+}
+
+impl ShovelMode {
+    pub fn active(&self) -> bool {
+        self.preview.is_some()
+    }
 }
 
 /// 太阳拾取物组件，标记掉落的太阳实体。
@@ -448,7 +454,7 @@ fn reset_level_runtime(
         .iter()
         .map(|card| (card.plant, Duration::ZERO))
         .collect();
-    shovel.active = false;
+    shovel.preview = None;
     *layout = definition.lawn.clone();
     occupancy.0.clear();
 }
@@ -533,20 +539,16 @@ struct WorldClickParams<'w, 's> {
     settings: Res<'w, GameplaySettings>,
     window: Single<'w, 's, &'static Window>,
     camera: Single<'w, 's, (&'static Camera, &'static GlobalTransform)>,
-    layout: Res<'w, LawnLayout>,
     ui_buttons: Query<'w, 's, &'static Interaction, With<Button>>,
     pickups: Query<'w, 's, (Entity, &'static Transform, &'static SunPickup)>,
     bank: ResMut<'w, SunBank>,
-    occupancy: ResMut<'w, CellOccupancy>,
-    shovel: ResMut<'w, ShovelMode>,
 }
 
 /// 处理鼠标左键点击。
 ///
 /// 逻辑顺序：
 /// 1. 将屏幕坐标转换为世界坐标
-/// 2. 先检测是否点到了太阳拾取物（28 像素范围内），是则收集并销毁
-/// 3. 若铲子已启用，则移除点击格子中的植物
+/// 2. 检测是否点到了太阳拾取物（28 像素范围内），是则收集并销毁
 fn handle_world_clicks(mut params: WorldClickParams) {
     if !params.mouse.just_pressed(params.controls.place_or_collect) {
         return;
@@ -574,14 +576,6 @@ fn handle_world_clicks(mut params: WorldClickParams) {
         params.bank.amount += pickup.value;
         params.commands.entity(entity).despawn();
         return;
-    }
-
-    if params.shovel.active
-        && let Some(cell) = params.layout.world_to_cell(world)
-        && let Some(entity) = params.occupancy.0.remove(&cell)
-    {
-        params.commands.entity(entity).despawn();
-        params.shovel.active = false;
     }
 }
 
@@ -772,7 +766,9 @@ mod tests {
             })
             .insert_resource(SunBank { amount: 1 })
             .insert_resource(PlantCards::default())
-            .insert_resource(ShovelMode { active: true })
+            .insert_resource(ShovelMode {
+                preview: Some(Entity::PLACEHOLDER),
+            })
             .insert_resource(LawnLayout::default())
             .insert_resource(CellOccupancy::default())
             .add_systems(Update, reset_level_runtime);
@@ -780,7 +776,7 @@ mod tests {
         app.update();
 
         assert_eq!(app.world().resource::<SunBank>().amount, 777);
-        assert!(!app.world().resource::<ShovelMode>().active);
+        assert!(!app.world().resource::<ShovelMode>().active());
         assert_eq!(app.world().resource::<LawnLayout>().columns, 7);
         assert_eq!(app.world().resource::<LevelRuntime>().next_wave, 0);
         assert_eq!(app.world().resource::<LevelRuntime>().next_spawn_in_wave, 0);
