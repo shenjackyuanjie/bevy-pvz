@@ -34,6 +34,7 @@ impl Plugin for GameUiPlugin {
                     finish_plant_drag,
                     finish_shovel_drag,
                     update_hud,
+                    update_zombie_progress,
                 )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
@@ -48,6 +49,12 @@ impl Plugin for GameUiPlugin {
 #[derive(Component)]
 /// 标记顶部关卡数据文字，供每帧增量更新。
 struct HudStatsText;
+
+#[derive(Component)]
+struct ZombieProgressText;
+
+#[derive(Component)]
+struct ZombieProgressFill;
 
 #[derive(Component)]
 /// 标记植物卡片背景，并保存该卡片对应的植物类型。
@@ -165,6 +172,8 @@ fn setup_hud(
                 left.spawn((
                     Node {
                         width: percent(100),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(6),
                         padding: UiRect::axes(px(16), px(9)),
                         border: UiRect::all(px(1)),
                         border_radius: BorderRadius::all(px(theme.panel_radius)),
@@ -185,6 +194,38 @@ fn setup_hud(
                         TextColor(theme.hud_text),
                         HudStatsText,
                     ));
+                    panel.spawn((
+                        Text::new("僵尸进度  剩余 -- / --"),
+                        TextFont {
+                            font: font.clone(),
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(theme.help_text),
+                        ZombieProgressText,
+                    ));
+                    panel
+                        .spawn((
+                            Node {
+                                width: percent(100),
+                                height: px(13),
+                                border: UiRect::all(px(1)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.08, 0.05, 0.03, 0.92)),
+                            BorderColor::all(Color::srgba(0.78, 0.64, 0.32, 0.75)),
+                            Name::new("僵尸进度条"),
+                        ))
+                        .with_child((
+                            Node {
+                                width: percent(0),
+                                height: percent(100),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.62, 0.12, 0.08)),
+                            ZombieProgressFill,
+                            Name::new("僵尸进度填充"),
+                        ));
                 });
 
                 left.spawn((
@@ -617,6 +658,24 @@ fn update_hud(mut params: HudParams) {
     } else {
         params.theme.card_text
     };
+}
+
+fn update_zombie_progress(
+    definition: Res<LevelDefinition>,
+    runtime: Res<LevelRuntime>,
+    mut fill: Single<&mut Node, With<ZombieProgressFill>>,
+    mut label: Single<&mut Text, With<ZombieProgressText>>,
+) {
+    let total: usize = definition.waves.iter().map(|wave| wave.spawns.len()).sum();
+    let defeated = runtime.defeated_zombies as usize;
+    let remaining = total.saturating_sub(defeated);
+    let completed_ratio = if total == 0 {
+        1.0
+    } else {
+        defeated.min(total) as f32 / total as f32
+    };
+    fill.width = percent(completed_ratio * 100.0);
+    label.0 = format!("僵尸进度  剩余 {remaining} / {total}");
 }
 
 /// 显示中文胜利结果页。
