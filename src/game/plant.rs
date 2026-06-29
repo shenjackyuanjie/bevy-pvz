@@ -19,7 +19,7 @@ use crate::game::lawn::{CellOccupancy, GridCell, LawnLayout};
 use crate::game::level::{PlantCards, SpawnSun, SunBank};
 use crate::game::model::plant_model_parts;
 use crate::game::physics::plant_groups;
-use crate::game::projectile::{ProjectileKind, SpawnProjectile};
+use crate::game::projectile::{ProjectileKind, ProjectileRoute, SpawnProjectile};
 use crate::game::schedule::GameSet;
 use crate::game::state::GameState;
 use crate::game::theme::UiTheme;
@@ -255,7 +255,7 @@ fn fire_ready_shooters(
     mut spawn: MessageWriter<SpawnProjectile>,
 ) {
     for (entity, transform, cell, mut shooter, mut timer) in &mut shooters {
-        let origin = shooter_projectile_origin(
+        let (origin, route) = shooter_projectile_route(
             &layout,
             *cell,
             transform.translation.truncate(),
@@ -269,19 +269,25 @@ fn fire_ready_shooters(
                     owner: entity,
                     origin,
                     kind: shooter.projectile,
+                    route,
                 });
                 shooter.remaining_burst_shots -= 1;
             }
             continue;
         }
+        let target_origin_x = match route {
+            ProjectileRoute::Direct => origin.x,
+            ProjectileRoute::LeftEdgePortal { exit, .. } => exit.x,
+        };
         let has_target = zombies
             .iter()
-            .any(|zombie_transform| zombie_transform.translation.x > origin.x);
+            .any(|zombie_transform| zombie_transform.translation.x > target_origin_x);
         if has_target && timer.0.just_finished() {
             spawn.write(SpawnProjectile {
                 owner: entity,
                 origin,
                 kind: shooter.projectile,
+                route,
             });
             shooter.remaining_burst_shots = shooter.shots_per_burst - 1;
             shooter.burst_timer.reset();
@@ -289,17 +295,23 @@ fn fire_ready_shooters(
     }
 }
 
-/// 专用行的弹丸直接传送到主草坪最左格；其他射手仍从自身炮口发射。
-fn shooter_projectile_origin(
+/// 底排弹丸从自身炮口向左发射，到边界后从 row 0 左端向右继续飞行。
+fn shooter_projectile_route(
     layout: &LawnLayout,
     cell: GridCell,
     plant_position: Vec2,
     muzzle_offset: Vec2,
-) -> Vec2 {
+) -> (Vec2, ProjectileRoute) {
     if cell.is_peashooter_row() {
-        layout.cell_center(GridCell { column: 0, row: 0 }) + muzzle_offset
+        (
+            plant_position + muzzle_offset,
+            ProjectileRoute::LeftEdgePortal {
+                trigger_x: layout.origin.x,
+                exit: Vec2::new(layout.origin.x, layout.path_y() + muzzle_offset.y),
+            },
+        )
     } else {
-        plant_position + muzzle_offset
+        (plant_position + muzzle_offset, ProjectileRoute::Direct)
     }
 }
 
@@ -374,15 +386,20 @@ mod tests {
     }
 
     #[test]
-    fn lower_row_projectiles_teleport_to_the_ground_left_edge() {
+    fn lower_row_projectiles_start_locally_and_carry_a_portal_route() {
         let layout = LawnLayout::default();
         let muzzle = Vec2::new(36.0, 12.0);
         let lower = GridCell { column: 7, row: -2 };
-        let expected = layout.cell_center(GridCell { column: 0, row: 0 }) + muzzle;
+        let plant_position = layout.cell_center(lower);
+        let (origin, route) = shooter_projectile_route(&layout, lower, plant_position, muzzle);
 
+        assert_eq!(origin, plant_position + muzzle);
         assert_eq!(
-            shooter_projectile_origin(&layout, lower, layout.cell_center(lower), muzzle),
-            expected
+            route,
+            ProjectileRoute::LeftEdgePortal {
+                trigger_x: layout.origin.x,
+                exit: Vec2::new(layout.origin.x, layout.path_y() + muzzle.y),
+            }
         );
     }
 }

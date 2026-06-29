@@ -104,6 +104,13 @@ struct PathVelocity(Vec2);
 #[derive(Component, Debug)]
 struct PreviousPosition(Vec2);
 
+/// 底排豌豆到达左边界后的传送参数。
+#[derive(Component, Debug, Clone, Copy, PartialEq)]
+struct LeftEdgePortal {
+    trigger_x: f32,
+    exit: Vec2,
+}
+
 /// 弹丸逻辑和物理碰撞共用的半径。
 #[derive(Component, Debug, Clone, Copy)]
 struct ProjectileRadius(f32);
@@ -142,6 +149,14 @@ pub struct SpawnProjectile {
     pub origin: Vec2,
     /// 弹丸种类。
     pub kind: ProjectileKind,
+    /// 弹道路线；底排豌豆使用左边界传送，调试弹丸使用直行。
+    pub route: ProjectileRoute,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ProjectileRoute {
+    Direct,
+    LeftEdgePortal { trigger_x: f32, exit: Vec2 },
 }
 
 /// 弹丸命中事件消息，由碰撞检测系统发出，[`resolve_projectile_hits`] 消费。
@@ -197,16 +212,24 @@ fn spawn_projectiles(
         );
 
         let mut projectile = match definition.motion {
-            ProjectileMotionDefinition::Path { velocity } => commands.spawn((
-                base,
-                ProjectileMotion::Path,
-                PathVelocity(velocity),
-                PreviousPosition(request.origin),
-                HitPolicy {
-                    destroy_on_hit: definition.hit_policy.destroy_on_hit,
-                    remaining_pierces: definition.hit_policy.max_pierces,
-                },
-            )),
+            ProjectileMotionDefinition::Path { velocity } => {
+                let velocity = match request.route {
+                    ProjectileRoute::Direct => velocity,
+                    ProjectileRoute::LeftEdgePortal { .. } => {
+                        Vec2::new(-velocity.x.abs(), velocity.y)
+                    }
+                };
+                commands.spawn((
+                    base,
+                    ProjectileMotion::Path,
+                    PathVelocity(velocity),
+                    PreviousPosition(request.origin),
+                    HitPolicy {
+                        destroy_on_hit: definition.hit_policy.destroy_on_hit,
+                        remaining_pierces: definition.hit_policy.max_pierces,
+                    },
+                ))
+            }
             ProjectileMotionDefinition::Physics {
                 initial_velocity,
                 gravity_scale,
@@ -231,6 +254,11 @@ fn spawn_projectiles(
                 physics_projectile_groups(),
             )),
         };
+        if matches!(definition.motion, ProjectileMotionDefinition::Path { .. })
+            && let ProjectileRoute::LeftEdgePortal { trigger_x, exit } = request.route
+        {
+            projectile.insert(LeftEdgePortal { trigger_x, exit });
+        }
         projectile.with_child((
             Mesh2d(render.fill_mesh),
             MeshMaterial2d(render.fill_material),
@@ -240,17 +268,43 @@ fn spawn_projectiles(
     }
 }
 
-/// 路径弹丸运动：每帧记录上一帧位置并按速度向量更新当前位置。
+/// 路径弹丸运动：底排弹丸向左越过边界后传送到 row 0 并改为向右。
 fn advance_path_projectiles(
     time: Res<Time<Fixed>>,
     mut projectiles: Query<
-        (&mut Transform, &PathVelocity, &mut PreviousPosition),
+        (
+            &mut Transform,
+            &mut PathVelocity,
+            &mut PreviousPosition,
+            Option<&LeftEdgePortal>,
+        ),
         With<Projectile>,
     >,
 ) {
-    for (mut transform, velocity, mut previous) in &mut projectiles {
-        previous.0 = transform.translation.truncate();
-        transform.translation += (velocity.0 * time.delta_secs()).extend(0.0);
+    for (mut transform, mut velocity, mut previous, portal) in &mut projectiles {
+        let start = transform.translation.truncate();
+        let (next, previous_position) =
+            advance_path_step(start, &mut velocity.0, time.delta_secs(), portal.copied());
+        transform.translation = next.extend(transform.translation.z);
+        previous.0 = previous_position;
+    }
+}
+
+fn advance_path_step(
+    start: Vec2,
+    velocity: &mut Vec2,
+    delta_seconds: f32,
+    portal: Option<LeftEdgePortal>,
+) -> (Vec2, Vec2) {
+    let next = start + *velocity * delta_seconds;
+    if let Some(portal) = portal
+        && velocity.x < 0.0
+        && next.x <= portal.trigger_x
+    {
+        velocity.x = velocity.x.abs();
+        (portal.exit, portal.exit)
+    } else {
+        (next, start)
     }
 }
 
@@ -407,6 +461,7 @@ fn projectile_sandbox_keys(
             owner: Entity::PLACEHOLDER,
             origin,
             kind,
+            route: ProjectileRoute::Direct,
         });
     }
 }
@@ -487,6 +542,21 @@ mod tests {
     }
 
     #[test]
+    fn left_route_teleports_without_sweeping_between_rows_and_reverses() {
+        let portal = LeftEdgePortal {
+            trigger_x: -100.0,
+            exit: Vec2::new(-100.0, 40.0),
+        };
+        let mut velocity = Vec2::new(-430.0, 0.0);
+        let (position, previous) =
+            advance_path_step(Vec2::new(-95.0, -140.0), &mut velocity, 0.1, Some(portal));
+
+        assert_eq!(position, portal.exit);
+        assert_eq!(previous, portal.exit);
+        assert_eq!(velocity, Vec2::new(430.0, 0.0));
+    }
+
+    #[test]
     fn spawn_request_builds_distinct_motion_pipelines() {
         let mut app = App::new();
         app.add_message::<SpawnProjectile>()
@@ -500,6 +570,7 @@ mod tests {
                 owner: Entity::PLACEHOLDER,
                 origin: Vec2::ZERO,
                 kind,
+                route: ProjectileRoute::Direct,
             });
         }
 
