@@ -119,7 +119,6 @@ pub struct HitPolicyDefinition {
 pub struct ProjectileDefinition {
     pub kind: ProjectileKind,
     pub damage: f32,
-    pub lifetime: Duration,
     pub visual: ProjectileVisualDefinition,
     pub radius: f32,
     pub motion: ProjectileMotionDefinition,
@@ -210,7 +209,6 @@ impl Default for ContentCatalog {
                 ProjectileDefinition {
                     kind: ProjectileKind::Pea,
                     damage: 20.0,
-                    lifetime: Duration::from_secs(5),
                     visual: ProjectileVisualDefinition {
                         fill_color: Color::srgb(0.28, 0.92, 0.22),
                         border_color: Color::srgb(0.06, 0.30, 0.05),
@@ -228,7 +226,6 @@ impl Default for ContentCatalog {
                 ProjectileDefinition {
                     kind: ProjectileKind::PhysicsPea,
                     damage: 35.0,
-                    lifetime: Duration::from_secs(8),
                     visual: ProjectileVisualDefinition {
                         fill_color: Color::srgb(0.35, 0.85, 0.95),
                         border_color: Color::srgb(0.05, 0.28, 0.34),
@@ -349,9 +346,6 @@ impl ContentCatalog {
             validate_positive("projectile border width", projectile.visual.border_width)?;
             if projectile.visual.border_width >= projectile.radius {
                 return Err("projectile border width must be smaller than its radius".into());
-            }
-            if projectile.lifetime.is_zero() {
-                return Err("projectile lifetime must be positive".into());
             }
             match projectile.motion {
                 ProjectileMotionDefinition::Path { velocity } => {

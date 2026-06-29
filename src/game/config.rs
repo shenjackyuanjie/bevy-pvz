@@ -6,7 +6,6 @@ use bevy::prelude::*;
 pub struct GameplaySettings {
     pub sun_pickup_radius: f32,
     pub defeat_offset_x: f32,
-    pub projectile_cleanup_margin: Vec2,
     pub physics_side_margins: Vec2,
     pub physics_boundary_thickness: f32,
     pub physics_wall_half_height: f32,
@@ -18,7 +17,6 @@ impl Default for GameplaySettings {
         Self {
             sun_pickup_radius: 28.0,
             defeat_offset_x: 16.0,
-            projectile_cleanup_margin: Vec2::new(495.0, 425.0),
             physics_side_margins: Vec2::new(120.0, 220.0),
             physics_boundary_thickness: 10.0,
             physics_wall_half_height: 400.0,
@@ -32,14 +30,6 @@ impl GameplaySettings {
         let values = [
             ("sun_pickup_radius", self.sun_pickup_radius),
             ("defeat_offset_x", self.defeat_offset_x),
-            (
-                "projectile_cleanup_margin.x",
-                self.projectile_cleanup_margin.x,
-            ),
-            (
-                "projectile_cleanup_margin.y",
-                self.projectile_cleanup_margin.y,
-            ),
             ("physics_side_margins.x", self.physics_side_margins.x),
             ("physics_side_margins.y", self.physics_side_margins.y),
             (

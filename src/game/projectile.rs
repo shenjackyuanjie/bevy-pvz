@@ -13,15 +13,15 @@
 //! - `LogicMovement`：路径弹丸按速度前进
 //! - `ContactRead`：路径弹丸扫掠检测 + 物理弹丸碰撞事件收集
 //! - `Combat`：弹丸命中解析，发出 [`ApplyDamage`](crate::game::combat::ApplyDamage)
-//! - `DeathAndCleanup`：弹丸超时或超出边界时销毁
+//! - `DeathAndCleanup`：普通路径弹丸完全飞出窗口后销毁
 
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 use bevy_rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog, ProjectileMotionDefinition};
 use crate::game::combat::{ApplyDamage, DamageKind, Team};
-use crate::game::config::GameplaySettings;
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
 use crate::game::lawn::LawnLayout;
@@ -67,7 +67,7 @@ impl Plugin for ProjectilePlugin {
             )
             .add_systems(
                 FixedUpdate,
-                tick_projectile_lifetimes
+                cleanup_path_projectiles_outside_window
                     .in_set(GameSet::DeathAndCleanup)
                     .run_if(in_state(GameState::Playing)),
             );
@@ -85,8 +85,6 @@ pub struct Projectile {
     pub team: Team,
     /// 命中伤害值。
     pub damage: f32,
-    /// 生命周期计时器（超时自动销毁）。
-    pub lifetime: Timer,
 }
 
 /// 弹丸运动模式组件。
@@ -190,7 +188,6 @@ fn spawn_projectiles(
                 owner: request.owner,
                 team: Team::Plants,
                 damage: definition.damage,
-                lifetime: Timer::new(definition.lifetime, TimerMode::Once),
             },
             request.kind,
             ProjectileRadius(definition.radius),
@@ -354,31 +351,25 @@ fn resolve_projectile_hits(
 
         if policy.destroy_on_hit || policy.remaining_pierces == 0 {
             commands.entity(hit.projectile).despawn();
-        } else {
+        } else if policy.remaining_pierces != u8::MAX {
             policy.remaining_pierces = policy.remaining_pierces.saturating_sub(1);
         }
     }
 }
 
-/// 检查所有弹丸的生命周期计时器，超时或超出世界边界的弹丸被销毁。
-fn tick_projectile_lifetimes(
+/// 普通路径豌豆完全飞出当前窗口后销毁；物理豌豆不参与此清理。
+fn cleanup_path_projectiles_outside_window(
     mut commands: Commands,
-    time: Res<Time<Fixed>>,
-    layout: Res<LawnLayout>,
-    settings: Res<GameplaySettings>,
-    mut projectiles: Query<(Entity, &Transform, &mut Projectile)>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    projectiles: Query<(Entity, &Transform, &ProjectileRadius), With<PathVelocity>>,
 ) {
-    for (entity, transform, mut projectile) in &mut projectiles {
-        projectile.lifetime.tick(time.delta());
-        let position = transform.translation;
-        let min = layout.origin - settings.projectile_cleanup_margin;
-        let max = Vec2::new(layout.right(), layout.origin.y + layout.cell_size.y)
-            + settings.projectile_cleanup_margin;
-        if projectile.lifetime.is_finished()
-            || position.x < min.x
-            || position.x > max.x
-            || position.y < min.y
-            || position.y > max.y
+    let half_window = Vec2::new(window.resolution.width(), window.resolution.height()) * 0.5;
+    for (entity, transform, radius) in &projectiles {
+        let position = transform.translation.truncate();
+        if position.x + radius.0 < -half_window.x
+            || position.x - radius.0 > half_window.x
+            || position.y + radius.0 < -half_window.y
+            || position.y - radius.0 > half_window.y
         {
             commands.entity(entity).despawn();
         }
