@@ -27,7 +27,7 @@ pub const PEASHOOTER_ROW: i8 = -2;
 pub const LAWN_CENTER_X: f32 = -50.0;
 
 /// 道路中心 Y 坐标；上移一格以让下方专用行完整位于窗口内。
-pub const LAWN_PATH_Y: f32 = -90.0;
+pub const LAWN_PATH_Y: f32 = -125.0;
 
 /// 草坪插件，初始化 [`LawnLayout`] 和 [`CellOccupancy`] 资源，
 /// 并在进入 Playing 状态时绘制棋盘视觉格子。
