@@ -66,10 +66,74 @@ pub struct PlantDefinition {
 #[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash, serde::Deserialize)]
 pub enum ZombieKind {
     Basic,
+    Flag,
+    Conehead,
+    PoleVaulting,
+    Buckethead,
+    Newspaper,
+    ScreenDoor,
+    Football,
+    Dancing,
+    BackupDancer,
+    Snorkel,
+    Zomboni,
+    BobsledTeam,
+    DolphinRider,
+    JackInTheBox,
+    Balloon,
+    Digger,
+    Pogo,
+    Yeti,
+    Bungee,
+    Ladder,
+    Catapult,
+    Gargantuar,
+    GigaGargantuar,
+    Imp,
+    IZombieImp,
+    PeashooterZombie,
+    WallNutZombie,
+    JalapenoZombie,
+    GatlingPeaZombie,
+    SquashZombie,
+    TallNutZombie,
 }
 
 impl ZombieKind {
-    pub const ALL: [Self; 1] = [Self::Basic];
+    pub const ALL: [Self; 32] = [
+        Self::Basic,
+        Self::Flag,
+        Self::Conehead,
+        Self::PoleVaulting,
+        Self::Buckethead,
+        Self::Newspaper,
+        Self::ScreenDoor,
+        Self::Football,
+        Self::Dancing,
+        Self::BackupDancer,
+        Self::Snorkel,
+        Self::Zomboni,
+        Self::BobsledTeam,
+        Self::DolphinRider,
+        Self::JackInTheBox,
+        Self::Balloon,
+        Self::Digger,
+        Self::Pogo,
+        Self::Yeti,
+        Self::Bungee,
+        Self::Ladder,
+        Self::Catapult,
+        Self::Gargantuar,
+        Self::GigaGargantuar,
+        Self::Imp,
+        Self::IZombieImp,
+        Self::PeashooterZombie,
+        Self::WallNutZombie,
+        Self::JalapenoZombie,
+        Self::GatlingPeaZombie,
+        Self::SquashZombie,
+        Self::TallNutZombie,
+    ];
 }
 
 #[derive(Debug, Clone)]
@@ -91,11 +155,13 @@ pub struct ZombieDefinition {
 #[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum ProjectileKind {
     Pea,
+    IcePea,
+    FirePea,
     PhysicsPea,
 }
 
 impl ProjectileKind {
-    pub const ALL: [Self; 2] = [Self::Pea, Self::PhysicsPea];
+    pub const ALL: [Self; 4] = [Self::Pea, Self::IcePea, Self::FirePea, Self::PhysicsPea];
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -239,22 +305,43 @@ impl Default for ContentCatalog {
                     behavior: PlantBehavior::Blocker,
                 },
             ],
-            zombies: vec![ZombieDefinition {
-                kind: ZombieKind::Basic,
-                display_name: "普通僵尸",
-                scene_label: "僵尸",
-                health: 100.0,
-                speed: 17.0,
-                attack_damage: 20.0,
-                attack_interval: Duration::from_secs(1),
-                engage_range: -12.0..=62.0,
-                spawn_offset_x: 75.0,
-                visual: UnitVisualDefinition {
-                    color: Color::srgb(0.42, 0.48, 0.38),
-                    size: Vec2::new(58.0, 82.0),
-                },
-                collider_half_size: Vec2::new(29.0, 41.0),
-            }],
+            zombies: [
+                (ZombieKind::Basic, "普通僵尸", 200.0),
+                (ZombieKind::Flag, "旗帜僵尸", 200.0),
+                (ZombieKind::Conehead, "路障僵尸", 560.0),
+                (ZombieKind::PoleVaulting, "撑杆僵尸", 340.0),
+                (ZombieKind::Buckethead, "铁桶僵尸", 1300.0),
+                (ZombieKind::Newspaper, "读报僵尸", 360.0),
+                (ZombieKind::ScreenDoor, "铁门僵尸", 1300.0),
+                (ZombieKind::Football, "橄榄球僵尸", 1600.0),
+                (ZombieKind::Dancing, "舞王僵尸", 340.0),
+                (ZombieKind::BackupDancer, "伴舞僵尸", 200.0),
+                (ZombieKind::Snorkel, "潜水僵尸", 200.0),
+                (ZombieKind::Zomboni, "冰车僵尸", 1160.0),
+                (ZombieKind::BobsledTeam, "雪橇僵尸小队", 1080.0),
+                (ZombieKind::DolphinRider, "海豚僵尸", 340.0),
+                (ZombieKind::JackInTheBox, "小丑僵尸", 340.0),
+                (ZombieKind::Balloon, "气球僵尸", 200.0),
+                (ZombieKind::Digger, "矿工僵尸", 300.0),
+                (ZombieKind::Pogo, "跳跳僵尸", 340.0),
+                (ZombieKind::Yeti, "雪人僵尸", 920.0),
+                (ZombieKind::Bungee, "蹦极僵尸", 460.0),
+                (ZombieKind::Ladder, "梯子僵尸", 840.0),
+                (ZombieKind::Catapult, "投篮僵尸", 660.0),
+                (ZombieKind::Gargantuar, "巨人僵尸", 3000.0),
+                (ZombieKind::GigaGargantuar, "红眼巨人僵尸", 6000.0),
+                (ZombieKind::Imp, "小鬼僵尸", 200.0),
+                (ZombieKind::IZombieImp, "我是僵尸模式小鬼", 60.0),
+                (ZombieKind::PeashooterZombie, "豌豆僵尸", 200.0),
+                (ZombieKind::WallNutZombie, "坚果僵尸", 1300.0),
+                (ZombieKind::JalapenoZombie, "辣椒僵尸", 340.0),
+                (ZombieKind::GatlingPeaZombie, "机枪僵尸", 200.0),
+                (ZombieKind::SquashZombie, "窝瓜僵尸", 200.0),
+                (ZombieKind::TallNutZombie, "高坚果僵尸", 2400.0),
+            ]
+            .into_iter()
+            .map(|(kind, display_name, health)| zombie_definition(kind, display_name, health))
+            .collect(),
             projectiles: vec![
                 ProjectileDefinition {
                     kind: ProjectileKind::Pea,
@@ -274,8 +361,42 @@ impl Default for ContentCatalog {
                     },
                 },
                 ProjectileDefinition {
+                    kind: ProjectileKind::IcePea,
+                    damage: 20.0,
+                    visual: ProjectileVisualDefinition {
+                        fill_color: Color::srgb(0.35, 0.85, 0.95),
+                        border_color: Color::srgb(0.05, 0.28, 0.34),
+                        border_width: 2.0,
+                    },
+                    radius: 9.0,
+                    motion: ProjectileMotionDefinition::Path {
+                        velocity: Vec2::new(430.0, 0.0),
+                    },
+                    hit_policy: HitPolicyDefinition {
+                        destroy_on_hit: true,
+                        max_pierces: 0,
+                    },
+                },
+                ProjectileDefinition {
+                    kind: ProjectileKind::FirePea,
+                    damage: 40.0,
+                    visual: ProjectileVisualDefinition {
+                        fill_color: Color::srgb(1.0, 0.38, 0.08),
+                        border_color: Color::srgb(0.45, 0.08, 0.02),
+                        border_width: 2.0,
+                    },
+                    radius: 9.0,
+                    motion: ProjectileMotionDefinition::Path {
+                        velocity: Vec2::new(430.0, 0.0),
+                    },
+                    hit_policy: HitPolicyDefinition {
+                        destroy_on_hit: true,
+                        max_pierces: 0,
+                    },
+                },
+                ProjectileDefinition {
                     kind: ProjectileKind::PhysicsPea,
-                    damage: 35.0,
+                    damage: 20.0,
                     visual: ProjectileVisualDefinition {
                         fill_color: Color::srgb(0.35, 0.85, 0.95),
                         border_color: Color::srgb(0.05, 0.28, 0.34),
@@ -296,6 +417,29 @@ impl Default for ContentCatalog {
                 },
             ],
         }
+    }
+}
+
+fn zombie_definition(
+    kind: ZombieKind,
+    display_name: &'static str,
+    health: f32,
+) -> ZombieDefinition {
+    ZombieDefinition {
+        kind,
+        display_name,
+        scene_label: "僵尸",
+        health,
+        speed: 17.0,
+        attack_damage: 20.0,
+        attack_interval: Duration::from_secs(1),
+        engage_range: -12.0..=62.0,
+        spawn_offset_x: 75.0,
+        visual: UnitVisualDefinition {
+            color: Color::srgb(0.42, 0.48, 0.38),
+            size: Vec2::new(58.0, 82.0),
+        },
+        collider_half_size: Vec2::new(29.0, 41.0),
     }
 }
 

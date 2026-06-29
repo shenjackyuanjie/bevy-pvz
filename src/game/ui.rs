@@ -522,7 +522,9 @@ fn update_hud(mut params: HudParams) {
     let mut physics_peas = 0;
     for kind in &params.projectiles {
         match kind {
-            ProjectileKind::Pea => path_peas += 1,
+            ProjectileKind::Pea | ProjectileKind::IcePea | ProjectileKind::FirePea => {
+                path_peas += 1;
+            }
             ProjectileKind::PhysicsPea => physics_peas += 1,
         }
     }
