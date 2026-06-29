@@ -92,22 +92,36 @@ struct ZombieHealthBarFill;
 #[derive(Component)]
 struct ZombieHealthBarBackground;
 
+#[derive(Component)]
+struct ZombieNameText;
+
+/// 用于避免同一系统中多组查询冲突的排除过滤。
 type ZombieHealthTextFilter = (
     With<ZombieHealthText>,
     Without<ZombieHealthBarFill>,
     Without<ZombieHealthBarBackground>,
+    Without<ZombieNameText>,
 );
 
 type ZombieHealthFillFilter = (
     With<ZombieHealthBarFill>,
     Without<ZombieHealthText>,
     Without<ZombieHealthBarBackground>,
+    Without<ZombieNameText>,
 );
 
 type ZombieHealthBackgroundFilter = (
     With<ZombieHealthBarBackground>,
     Without<ZombieHealthText>,
     Without<ZombieHealthBarFill>,
+    Without<ZombieNameText>,
+);
+
+type ZombieNameTextFilter = (
+    With<ZombieNameText>,
+    Without<ZombieHealthText>,
+    Without<ZombieHealthBarFill>,
+    Without<ZombieHealthBarBackground>,
 );
 
 /// 生成僵尸的请求消息。
@@ -197,6 +211,8 @@ pub(crate) fn spawn_zombies(
                     color: label.shadow,
                 },
                 Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
+                Visibility::Hidden,
+                ZombieNameText,
                 Name::new("僵尸名称"),
             ));
             parent.spawn((
@@ -244,6 +260,7 @@ fn update_zombie_health_debug(
     mut texts: Query<(&mut Text2d, &mut Visibility), ZombieHealthTextFilter>,
     mut fills: Query<(&mut Sprite, &mut Transform, &mut Visibility), ZombieHealthFillFilter>,
     mut backgrounds: Query<&mut Visibility, ZombieHealthBackgroundFilter>,
+    mut name_texts: Query<&mut Visibility, ZombieNameTextFilter>,
 ) {
     let visibility = if debug.enabled {
         Visibility::Visible
@@ -271,6 +288,9 @@ fn update_zombie_health_debug(
                 *child_visibility = visibility;
             }
             if let Ok(mut child_visibility) = backgrounds.get_mut(child) {
+                *child_visibility = visibility;
+            }
+            if let Ok(mut child_visibility) = name_texts.get_mut(child) {
                 *child_visibility = visibility;
             }
         }

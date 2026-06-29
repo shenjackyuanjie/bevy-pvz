@@ -51,6 +51,10 @@ impl Plugin for PlantPlugin {
                     .in_set(GameSet::DeathAndCleanup)
                     .before(crate::game::combat::cleanup_dead_entities)
                     .run_if(in_state(GameState::Playing)),
+            )
+            .add_systems(
+                Update,
+                update_plant_debug_visibility.run_if(in_state(GameState::Playing)),
             );
     }
 }
@@ -62,6 +66,10 @@ pub struct Plant;
 /// 内部组件：动作计时器，用于驱动周期性行为（射击间隔、产太阳间隔）。
 #[derive(Component, Debug)]
 struct ActionTimer(Timer);
+
+/// 植物名称标签标记组件，用于在 debug 模式下控制名称文字的显示/隐藏。
+#[derive(Component, Debug)]
+struct PlantNameText;
 
 /// 放置植物的请求消息。
 ///
@@ -158,6 +166,8 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
                     color: label.shadow,
                 },
                 Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
+                Visibility::Hidden,
+                PlantNameText,
                 Name::new("植物名称"),
             ));
         });
@@ -207,6 +217,21 @@ fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
         PlantKind::Sunflower => cell.is_elevated(),
         PlantKind::Peashooter => cell.is_ground() || cell.is_peashooter_row(),
         PlantKind::Repeater | PlantKind::GatlingPea | PlantKind::WallNut => cell.is_ground(),
+    }
+}
+
+/// 物理 debug 渲染开启时，显示植物名称标签。
+fn update_plant_debug_visibility(
+    debug: Res<DebugRenderContext>,
+    mut texts: Query<&mut Visibility, With<PlantNameText>>,
+) {
+    let visibility = if debug.enabled {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    for mut v in &mut texts {
+        *v = visibility;
     }
 }
 
