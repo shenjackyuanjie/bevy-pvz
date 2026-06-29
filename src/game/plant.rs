@@ -162,12 +162,17 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
                 interval,
                 projectile,
                 muzzle_offset,
+                shots_per_burst,
+                burst_interval,
             } => {
                 entity.insert((
                     ActionTimer(Timer::new(interval, TimerMode::Repeating)),
                     Shooter {
                         projectile,
                         muzzle_offset,
+                        shots_per_burst,
+                        remaining_burst_shots: 0,
+                        burst_timer: Timer::new(burst_interval, TimerMode::Repeating),
                     },
                 ));
             }
@@ -183,12 +188,24 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
 /// 只有当射手的 `ActionTimer` 归零（射击间隔结束）且前方存在僵尸时才会发射。
 fn fire_ready_shooters(
     time: Res<Time<Fixed>>,
-    mut shooters: Query<(Entity, &Transform, &Shooter, &mut ActionTimer)>,
+    mut shooters: Query<(Entity, &Transform, &mut Shooter, &mut ActionTimer)>,
     zombies: Query<&Transform, With<Zombie>>,
     mut spawn: MessageWriter<SpawnProjectile>,
 ) {
-    for (entity, transform, shooter, mut timer) in &mut shooters {
+    for (entity, transform, mut shooter, mut timer) in &mut shooters {
         timer.0.tick(time.delta());
+        if shooter.remaining_burst_shots > 0 {
+            shooter.burst_timer.tick(time.delta());
+            if shooter.burst_timer.just_finished() {
+                spawn.write(SpawnProjectile {
+                    owner: entity,
+                    origin: transform.translation.truncate() + shooter.muzzle_offset,
+                    kind: shooter.projectile,
+                });
+                shooter.remaining_burst_shots -= 1;
+            }
+            continue;
+        }
         let has_target = zombies
             .iter()
             .any(|zombie_transform| zombie_transform.translation.x > transform.translation.x);
@@ -198,6 +215,8 @@ fn fire_ready_shooters(
                 origin: transform.translation.truncate() + shooter.muzzle_offset,
                 kind: shooter.projectile,
             });
+            shooter.remaining_burst_shots = shooter.shots_per_burst - 1;
+            shooter.burst_timer.reset();
         }
     }
 }
@@ -243,4 +262,7 @@ struct SunProducer {
 struct Shooter {
     projectile: ProjectileKind,
     muzzle_offset: Vec2,
+    shots_per_burst: u8,
+    remaining_burst_shots: u8,
+    burst_timer: Timer,
 }

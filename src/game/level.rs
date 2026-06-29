@@ -811,6 +811,7 @@ mod tests {
             },
             ..default()
         };
+        let expected_card_count = definition.cards.len();
 
         let mut app = App::new();
         app.insert_resource(definition)
@@ -837,6 +838,9 @@ mod tests {
         assert_eq!(app.world().resource::<LawnLayout>().columns, 7);
         assert_eq!(app.world().resource::<LevelRuntime>().next_wave, 0);
         assert_eq!(app.world().resource::<LevelRuntime>().next_spawn_in_wave, 0);
-        assert_eq!(app.world().resource::<PlantCards>().0.len(), 3);
+        assert_eq!(
+            app.world().resource::<PlantCards>().0.len(),
+            expected_card_count
+        );
     }
 }

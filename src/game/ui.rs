@@ -113,7 +113,7 @@ fn setup_hud(
                     position_type: PositionType::Absolute,
                     top: px(12),
                     left: px(16),
-                    right: px(320),
+                    width: px(520),
                     flex_direction: FlexDirection::Column,
                     row_gap: px(theme.panel_gap),
                     ..default()
@@ -148,9 +148,8 @@ fn setup_hud(
 
                 left.spawn((
                     Node {
-                        flex_direction: FlexDirection::Row,
-                        flex_wrap: FlexWrap::Wrap,
-                        column_gap: px(theme.panel_gap),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: px(theme.panel_gap),
                         ..default()
                     },
                     Name::new("植物卡片栏"),
@@ -165,7 +164,7 @@ fn setup_hud(
                                 Node {
                                     width: px(theme.card_size.x),
                                     min_height: px(theme.card_size.y),
-                                    padding: UiRect::axes(px(12), px(8)),
+                                    padding: UiRect::axes(px(9), px(5)),
                                     border: UiRect::all(px(2)),
                                     border_radius: BorderRadius::all(px(theme.panel_radius)),
                                     align_items: AlignItems::Center,
@@ -179,7 +178,7 @@ fn setup_hud(
                             .with_children(|card| {
                                 card.spawn((
                                     Text::new(format!(
-                                        "  {}\n      {} 太阳  ·  点击选择",
+                                        "  {}  ·  {} 太阳\n    点击选择",
                                         plant.display_name, plant.price
                                     )),
                                     TextFont {
@@ -239,7 +238,7 @@ fn select_plant_card_from_ui(
     }
 }
 
-/// 刷新关卡统计和三张卡片的选中、余额及冷却视觉状态。
+/// 刷新关卡统计和植物卡片的选中、余额及冷却视觉状态。
 fn update_hud(mut params: HudParams) {
     let mut stats = format!(
         "太阳  {}     波次  {} / {}     已消灭  {}     时间  {:.1} 秒",
@@ -284,7 +283,7 @@ fn update_hud(mut params: HudParams) {
             " "
         };
         text.0 = format!(
-            "{marker} {}\n      {} 太阳  ·  {state}",
+            "{marker} {}  ·  {} 太阳\n    {state}",
             plant.display_name, plant.price,
         );
         color.0 = if params.selected.0 == kind {

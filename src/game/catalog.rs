@@ -17,11 +17,19 @@ pub struct UnitVisualDefinition {
 pub enum PlantKind {
     Sunflower,
     Peashooter,
+    Repeater,
+    GatlingPea,
     WallNut,
 }
 
 impl PlantKind {
-    pub const ALL: [Self; 3] = [Self::Sunflower, Self::Peashooter, Self::WallNut];
+    pub const ALL: [Self; 5] = [
+        Self::Sunflower,
+        Self::Peashooter,
+        Self::Repeater,
+        Self::GatlingPea,
+        Self::WallNut,
+    ];
 }
 
 /// 植物行为参数；系统负责执行，目录只描述数据。
@@ -36,6 +44,8 @@ pub enum PlantBehavior {
         interval: Duration,
         projectile: ProjectileKind,
         muzzle_offset: Vec2,
+        shots_per_burst: u8,
+        burst_interval: Duration,
     },
     Blocker,
 }
@@ -173,6 +183,46 @@ impl Default for ContentCatalog {
                         interval: Duration::from_millis(1350),
                         projectile: ProjectileKind::Pea,
                         muzzle_offset: Vec2::new(36.0, 12.0),
+                        shots_per_burst: 1,
+                        burst_interval: Duration::from_millis(150),
+                    },
+                },
+                PlantDefinition {
+                    kind: PlantKind::Repeater,
+                    display_name: "多发射手",
+                    price: 200,
+                    card_cooldown: Duration::from_secs(5),
+                    health: 120.0,
+                    visual: UnitVisualDefinition {
+                        color: Color::srgb(0.08, 0.58, 0.16),
+                        size: Vec2::new(58.0, 68.0),
+                    },
+                    collider_half_size: Vec2::new(29.0, 34.0),
+                    behavior: PlantBehavior::Shooter {
+                        interval: Duration::from_millis(1350),
+                        projectile: ProjectileKind::Pea,
+                        muzzle_offset: Vec2::new(36.0, 12.0),
+                        shots_per_burst: 2,
+                        burst_interval: Duration::from_millis(150),
+                    },
+                },
+                PlantDefinition {
+                    kind: PlantKind::GatlingPea,
+                    display_name: "机枪射手",
+                    price: 325,
+                    card_cooldown: Duration::from_secs(7),
+                    health: 140.0,
+                    visual: UnitVisualDefinition {
+                        color: Color::srgb(0.05, 0.42, 0.12),
+                        size: Vec2::new(62.0, 70.0),
+                    },
+                    collider_half_size: Vec2::new(29.0, 34.0),
+                    behavior: PlantBehavior::Shooter {
+                        interval: Duration::from_millis(1350),
+                        projectile: ProjectileKind::Pea,
+                        muzzle_offset: Vec2::new(38.0, 12.0),
+                        shots_per_burst: 4,
+                        burst_interval: Duration::from_millis(120),
                     },
                 },
                 PlantDefinition {
@@ -303,11 +353,21 @@ impl ContentCatalog {
             if let PlantBehavior::Shooter {
                 projectile,
                 interval,
+                shots_per_burst,
+                burst_interval,
                 ..
             } = plant.behavior
             {
-                if interval.is_zero() {
-                    return Err("shooter interval must be positive".into());
+                if interval.is_zero() || shots_per_burst == 0 {
+                    return Err("shooter interval and burst size must be positive".into());
+                }
+                if shots_per_burst > 1 && burst_interval.is_zero() {
+                    return Err("multi-shot burst interval must be positive".into());
+                }
+                if burst_interval.saturating_mul(u32::from(shots_per_burst.saturating_sub(1)))
+                    >= interval
+                {
+                    return Err("shooter burst must finish before the next firing cycle".into());
                 }
                 self.projectiles
                     .iter()

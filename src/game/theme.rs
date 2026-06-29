@@ -95,13 +95,13 @@ impl Default for UiTheme {
             sun_color: Color::srgb(1.0, 0.86, 0.15),
             sun_size: 34.0,
             hud_font_size: 18.0,
-            card_font_size: 15.0,
+            card_font_size: 13.0,
             help_font_size: 15.0,
             result_title_size: 76.0,
             result_subtitle_size: 24.0,
             panel_radius: 10.0,
-            panel_gap: 8.0,
-            card_size: Vec2::new(174.0, 68.0),
+            panel_gap: 6.0,
+            card_size: Vec2::new(190.0, 48.0),
         }
     }
 }
