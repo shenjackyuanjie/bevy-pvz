@@ -672,7 +672,7 @@ fn update_zombie_progress(
     mut label: Single<&mut Text, With<ZombieProgressText>>,
 ) {
     let total: usize = definition.waves.iter().map(|wave| wave.spawns.len()).sum();
-    let defeated = runtime.defeated_zombies as usize;
+    let defeated = runtime.defeated_zombies;
     let remaining = total.saturating_sub(defeated);
     let completed_ratio = if total == 0 {
         1.0
