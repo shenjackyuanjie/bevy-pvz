@@ -123,7 +123,7 @@ fn setup_physics_world(
     let board_width = layout.cell_size.x * f32::from(layout.columns);
     let center_x = layout.origin.x + board_width * 0.5;
 
-    // 地板：棋盘下方的宽阔平台，让抛出的豌豆有空间划弧和弹跳。
+    // 地板：碰撞体顶面与草坪底边精确平齐。
     commands.spawn((
         RigidBody::Fixed,
         Collider::cuboid(
@@ -133,14 +133,14 @@ fn setup_physics_world(
         world_groups(),
         Transform::from_xyz(
             center_x,
-            layout.origin.y - settings.physics_floor_offset,
+            layout.origin.y - settings.physics_boundary_thickness,
             0.0,
         ),
         LevelEntity,
         Name::new("Physics floor"),
     ));
 
-    // 左右侧墙：将物理沙箱限定在边界内。生命周期清理作为最终防线。
+    // 左右侧墙：将物理沙箱限定在边界内。
     for x in [
         layout.origin.x - settings.physics_side_margins.x,
         layout.right() + settings.physics_side_margins.y,
