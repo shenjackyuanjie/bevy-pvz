@@ -204,6 +204,14 @@ type ResolvedProjectileItem<'a> = (
     &'a mut HitPolicy,
     &'a mut HitRegistry,
 );
+type PathIgnitionItem<'a> = (
+    Entity,
+    &'a Transform,
+    &'a PreviousPosition,
+    &'a ProjectileRadius,
+    &'a ProjectileKind,
+    &'a mut TorchwoodRegistry,
+);
 
 #[derive(SystemParam)]
 struct IgnitionParams<'w, 's> {
@@ -378,17 +386,7 @@ fn advance_path_step(
 
 /// 路径豌豆使用扫掠检测穿过火炬上半部，不依赖 Rapier 碰撞事件。
 fn detect_path_torchwood_ignitions(
-    mut projectiles: Query<
-        (
-            Entity,
-            &Transform,
-            &PreviousPosition,
-            &ProjectileRadius,
-            &ProjectileKind,
-            &mut TorchwoodRegistry,
-        ),
-        With<PathVelocity>,
-    >,
+    mut projectiles: Query<PathIgnitionItem<'_>, With<PathVelocity>>,
     torchwoods: Query<(Entity, &Transform, &TorchwoodFlameZone)>,
     mut ignitions: MessageWriter<IgniteProjectile>,
 ) {
