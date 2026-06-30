@@ -128,7 +128,7 @@ pub struct ZombieSpawnDefinition {
     pub kind: ZombieKind,
 }
 
-/// 单个波次的全部僵尸生成点。RON 中每个 `waves` 数组项对应一个该结构。
+/// 单个波次的全部僵尸生成点。RON 中每个 `waves` 数组项对应一个显式 `wave`。
 #[derive(Debug, Clone)]
 pub struct ZombieWaveDefinition {
     pub spawns: Vec<ZombieSpawnDefinition>,
@@ -178,9 +178,18 @@ struct PlantCardConfig {
 struct WaveConfig {
     /// 距上一波最后一只僵尸的时间；第一波表示开局等待。
     delay: f32,
+    /// 本波内的刷怪条目；条目 delay 均相对于本波开始。
+    wave: Vec<WaveSpawnConfig>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WaveSpawnConfig {
+    /// 距本波开始的时间。
+    delay: f32,
     kind: ZombieKind,
     count: u32,
-    /// 同一波相邻僵尸之间的时间。
+    /// 同一条刷怪条目内相邻僵尸之间的时间。
     interval: f32,
 }
 
@@ -312,31 +321,49 @@ fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieWaveDefinition>, Str
                 "wave {index} delay must be finite and non-negative"
             ));
         }
-        if wave.count == 0 {
-            return Err(format!("wave {index} count must be positive"));
-        }
-        if !wave.interval.is_finite() || wave.interval < 0.0 {
+        if wave.wave.is_empty() {
             return Err(format!(
-                "wave {index} interval must be finite and non-negative"
-            ));
-        }
-        if wave.count > 1 && wave.interval == 0.0 {
-            return Err(format!(
-                "wave {index} interval must be positive when count is greater than one"
+                "wave {index} must contain at least one spawn entry"
             ));
         }
 
         elapsed += wave.delay;
-        let mut spawns = Vec::with_capacity(wave.count as usize);
-        for spawn_index in 0..wave.count {
-            spawns.push(ZombieSpawnDefinition {
-                at_seconds: elapsed,
-                kind: wave.kind,
-            });
-            if spawn_index + 1 < wave.count {
-                elapsed += wave.interval;
+        let wave_start = elapsed;
+        let mut spawns = Vec::new();
+        for (entry_index, entry) in wave.wave.into_iter().enumerate() {
+            if !entry.delay.is_finite() || entry.delay < 0.0 {
+                return Err(format!(
+                    "wave {index} entry {entry_index} delay must be finite and non-negative"
+                ));
+            }
+            if entry.count == 0 {
+                return Err(format!(
+                    "wave {index} entry {entry_index} count must be positive"
+                ));
+            }
+            if !entry.interval.is_finite() || entry.interval < 0.0 {
+                return Err(format!(
+                    "wave {index} entry {entry_index} interval must be finite and non-negative"
+                ));
+            }
+            if entry.count > 1 && entry.interval == 0.0 {
+                return Err(format!(
+                    "wave {index} entry {entry_index} interval must be positive when count is greater than one"
+                ));
+            }
+
+            for spawn_index in 0..entry.count {
+                spawns.push(ZombieSpawnDefinition {
+                    at_seconds: wave_start + entry.delay + entry.interval * spawn_index as f32,
+                    kind: entry.kind,
+                });
             }
         }
+        spawns.sort_by(|a, b| a.at_seconds.total_cmp(&b.at_seconds));
+        elapsed = spawns
+            .last()
+            .map(|spawn| spawn.at_seconds)
+            .unwrap_or(wave_start);
         definitions.push(ZombieWaveDefinition { spawns });
     }
     Ok(definitions)

@@ -75,6 +75,65 @@ fn ron_level_is_complete_and_valid() {
 }
 
 #[test]
+fn ron_wave_entries_are_relative_to_their_wave_start() {
+    let level = LevelDefinition::from_ron_str(
+        r#"
+        (
+            id: "test_wave_offsets",
+            display_name: "测试波次",
+            starting_sun: 50,
+            lawn: (
+                columns: 9,
+                cell_size: (90.0, 90.0),
+                center_x: -50.0,
+                path_y: -125.0,
+            ),
+            cards: [
+                (slot: 1, plant: Sunflower),
+            ],
+            waves: [
+                (
+                    delay: 5.0,
+                    wave: [
+                        (delay: 1.0, kind: Basic, count: 2, interval: 3.0),
+                        (delay: 1.0, kind: Conehead, count: 1, interval: 1.0),
+                        (delay: 0.0, kind: Imp, count: 1, interval: 1.0),
+                    ],
+                ),
+                (
+                    delay: 4.0,
+                    wave: [
+                        (delay: 2.0, kind: Buckethead, count: 1, interval: 1.0),
+                    ],
+                ),
+            ],
+        )
+        "#,
+    )
+    .unwrap();
+
+    let first_wave_times: Vec<f32> = level.waves[0]
+        .spawns
+        .iter()
+        .map(|spawn| spawn.at_seconds)
+        .collect();
+    assert_eq!(first_wave_times, vec![5.0, 6.0, 6.0, 9.0]);
+    assert!(
+        level.waves[0]
+            .spawns
+            .iter()
+            .any(|spawn| spawn.at_seconds == 6.0 && spawn.kind == ZombieKind::Basic)
+    );
+    assert!(
+        level.waves[0]
+            .spawns
+            .iter()
+            .any(|spawn| spawn.at_seconds == 6.0 && spawn.kind == ZombieKind::Conehead)
+    );
+    assert_eq!(level.waves[1].spawns[0].at_seconds, 15.0);
+}
+
+#[test]
 fn validation_rejects_duplicate_cards_and_invalid_lawn() {
     let catalog = ContentCatalog::default();
     let mut level = LevelDefinition::default();
