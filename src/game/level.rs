@@ -31,6 +31,7 @@ use crate::game::zombie::{SpawnZombie, Zombie};
 
 /// 默认关卡的外部 RON 配置路径。
 pub const DEFAULT_LEVEL_PATH: &str = "assets/levels/level_01.ron";
+const SUN_PICKUP_LIFETIME_SECONDS: f32 = 15.0;
 
 /// 关卡插件，注册资源、消息和所有关卡管理相关的系统。
 pub struct LevelPlugin;
@@ -661,9 +662,17 @@ fn handle_world_clicks(mut params: WorldClickParams) {
 }
 
 /// 太阳拾取物动画：上下浮动。名牌需要保持水平，因此不旋转整个实体。
-fn animate_sun_pickups(time: Res<Time>, mut pickups: Query<(&mut Transform, &mut SunPickup)>) {
-    for (mut transform, mut pickup) in &mut pickups {
+fn animate_sun_pickups(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut pickups: Query<(Entity, &mut Transform, &mut SunPickup)>,
+) {
+    for (entity, mut transform, mut pickup) in &mut pickups {
         pickup.age += time.delta_secs();
+        if pickup.age >= SUN_PICKUP_LIFETIME_SECONDS {
+            commands.entity(entity).despawn();
+            continue;
+        }
         transform.translation.y = pickup.base_y + (pickup.age * 2.2).sin() * 6.0;
     }
 }
