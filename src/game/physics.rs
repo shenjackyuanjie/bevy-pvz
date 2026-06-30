@@ -16,7 +16,7 @@ use bevy_rapier2d::prelude::*;
 use crate::game::config::GameplaySettings;
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
-use crate::game::lawn::{LawnLayout, PEASHOOTER_ROW};
+use crate::game::lawn::LawnLayout;
 use crate::game::level::LevelSetupSet;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
@@ -129,7 +129,7 @@ fn setup_physics_world(
 ) {
     let boundary = physics_boundary_layout(&layout, &settings);
 
-    // Collider::cuboid 使用半高，因此中心下移一个 thickness 后顶面正好对齐最低格底边。
+    // Collider::cuboid 使用半高，因此中心下移一个 thickness 后顶面正好对齐 row 0 底边。
     commands.spawn((
         RigidBody::Fixed,
         Collider::cuboid(boundary.floor_half_size.x, boundary.floor_half_size.y),
@@ -174,7 +174,7 @@ fn physics_boundary_layout(
         layout.origin.x - settings.physics_side_margins.x,
         layout.right() + settings.physics_side_margins.y,
     ];
-    let floor_top_y = layout.origin.y + f32::from(PEASHOOTER_ROW) * layout.cell_size.y;
+    let floor_top_y = layout.origin.y;
     let floor_half_width = (wall_x[1] - wall_x[0]) * 0.5 + settings.physics_boundary_thickness;
     PhysicsBoundaryLayout {
         floor_center: Vec2::new(
@@ -203,16 +203,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn physics_floor_sits_below_the_lowest_lane_and_reaches_walls() {
+    fn physics_floor_sits_below_row_zero_and_reaches_walls() {
         let layout = LawnLayout::default();
         let settings = GameplaySettings::default();
         let boundary = physics_boundary_layout(&layout, &settings);
 
         let floor_top = boundary.floor_center.y + boundary.floor_half_size.y;
-        assert_eq!(
-            floor_top,
-            layout.origin.y + f32::from(PEASHOOTER_ROW) * layout.cell_size.y
-        );
+        assert_eq!(floor_top, layout.origin.y);
         assert!(boundary.floor_center.x - boundary.floor_half_size.x <= boundary.wall_x[0]);
         assert!(boundary.floor_center.x + boundary.floor_half_size.x >= boundary.wall_x[1]);
     }
