@@ -501,7 +501,7 @@ fn zombie_definition(
     ZombieDefinition {
         kind,
         display_name,
-        scene_label: "僵尸",
+        scene_label: zombie_scene_label(kind),
         health: total_health - equipment_health.unwrap_or(0.0),
         equipment_health,
         speed,
@@ -514,6 +514,43 @@ fn zombie_definition(
             size: visual_size,
         },
         collider_half_size,
+    }
+}
+
+fn zombie_scene_label(kind: ZombieKind) -> &'static str {
+    match kind {
+        ZombieKind::Basic => "普通\n僵尸",
+        ZombieKind::Flag => "旗帜\n僵尸",
+        ZombieKind::Conehead => "路障\n僵尸",
+        ZombieKind::PoleVaulting => "撑杆\n僵尸",
+        ZombieKind::Buckethead => "铁桶\n僵尸",
+        ZombieKind::Newspaper => "读报\n僵尸",
+        ZombieKind::ScreenDoor => "栅栏\n僵尸",
+        ZombieKind::Football => "橄榄球\n僵尸",
+        ZombieKind::Dancing => "舞王\n僵尸",
+        ZombieKind::BackupDancer => "伴舞\n僵尸",
+        ZombieKind::Snorkel => "潜水\n僵尸",
+        ZombieKind::Zomboni => "冰车\n僵尸",
+        ZombieKind::BobsledTeam => "雪橇小队\n僵尸",
+        ZombieKind::DolphinRider => "海豚\n僵尸",
+        ZombieKind::JackInTheBox => "小丑\n僵尸",
+        ZombieKind::Balloon => "气球\n僵尸",
+        ZombieKind::Digger => "矿工\n僵尸",
+        ZombieKind::Pogo => "跳跳\n僵尸",
+        ZombieKind::Yeti => "雪人\n僵尸",
+        ZombieKind::Bungee => "蹦极\n僵尸",
+        ZombieKind::Ladder => "梯子\n僵尸",
+        ZombieKind::Catapult => "投篮\n僵尸",
+        ZombieKind::Gargantuar => "巨人\n僵尸",
+        ZombieKind::GigaGargantuar => "红眼巨人\n僵尸",
+        ZombieKind::Imp => "小鬼\n僵尸",
+        ZombieKind::IZombieImp => "我是小鬼\n僵尸",
+        ZombieKind::PeashooterZombie => "豌豆\n僵尸",
+        ZombieKind::WallNutZombie => "坚果\n僵尸",
+        ZombieKind::JalapenoZombie => "辣椒\n僵尸",
+        ZombieKind::GatlingPeaZombie => "机枪\n僵尸",
+        ZombieKind::SquashZombie => "窝瓜\n僵尸",
+        ZombieKind::TallNutZombie => "高坚果\n僵尸",
     }
 }
 
