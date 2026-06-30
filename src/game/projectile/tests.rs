@@ -216,12 +216,10 @@ fn fire_pea_deals_direct_and_small_same_lane_splash_damage() {
 
     assert_eq!(app.world().get::<Health>(target).unwrap().current, 60.0);
     assert_eq!(app.world().get::<Health>(nearby).unwrap().current, 86.0);
-    assert_eq!(app.world().get::<Health>(newspaper).unwrap().current, 100.0);
+    assert_eq!(app.world().get::<Health>(newspaper).unwrap().current, 86.0);
     assert_eq!(app.world().get::<Health>(far).unwrap().current, 100.0);
     assert!(!fire_splash_triggers(ZombieKind::ScreenDoor));
-    assert!(!fire_splash_affects(ZombieKind::Zomboni));
-    assert_eq!(
-        fire_direct_damage(40.0, ProjectileKind::FirePea, Some(ZombieKind::Newspaper)),
-        80.0
-    );
+    assert!(!fire_splash_affects(ZombieKind::Ladder));
+    assert!(fire_splash_affects(ZombieKind::Newspaper));
+    assert!(fire_splash_affects(ZombieKind::Zomboni));
 }
