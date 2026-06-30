@@ -6,8 +6,8 @@ use super::{ModelPart, part};
 use crate::game::catalog::PlantKind;
 
 pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
-    let green = Color::srgb(0.10, 0.58, 0.16);
-    let dark_green = Color::srgb(0.05, 0.30, 0.08);
+    let green = Color::srgb(0.13, 0.70, 0.13);
+    let dark_green = Color::srgb(0.03, 0.28, 0.04);
     let mut parts = vec![
         part(
             "植物茎",
@@ -109,31 +109,31 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
         | PlantKind::GatlingPea => {
             let (head_color, barrel_color, rim_color, highlight_color, barrel_count) = match kind {
                 PlantKind::Peashooter => (
-                    Color::srgb(0.16, 0.72, 0.20),
-                    Color::srgb(0.14, 0.64, 0.17),
+                    Color::srgb(0.20, 0.88, 0.18),
+                    Color::srgb(0.15, 0.74, 0.12),
                     dark_green,
-                    Color::srgb(0.42, 0.88, 0.35),
+                    Color::srgb(0.68, 1.0, 0.46),
                     1,
                 ),
                 PlantKind::SnowPea => (
-                    Color::srgb(0.24, 0.74, 0.86),
-                    Color::srgb(0.20, 0.62, 0.78),
+                    Color::srgb(0.28, 0.86, 1.0),
+                    Color::srgb(0.20, 0.70, 0.94),
                     Color::srgb(0.05, 0.28, 0.38),
-                    Color::srgb(0.72, 0.96, 1.0),
+                    Color::srgb(0.86, 1.0, 1.0),
                     1,
                 ),
                 PlantKind::Repeater => (
-                    Color::srgb(0.08, 0.58, 0.16),
-                    Color::srgb(0.07, 0.50, 0.13),
+                    Color::srgb(0.10, 0.74, 0.14),
+                    Color::srgb(0.07, 0.62, 0.09),
                     dark_green,
-                    Color::srgb(0.38, 0.82, 0.30),
+                    Color::srgb(0.54, 0.96, 0.34),
                     2,
                 ),
                 PlantKind::GatlingPea => (
-                    Color::srgb(0.05, 0.42, 0.12),
-                    Color::srgb(0.04, 0.34, 0.09),
+                    Color::srgb(0.06, 0.56, 0.11),
+                    Color::srgb(0.04, 0.44, 0.07),
                     Color::srgb(0.02, 0.18, 0.05),
-                    Color::srgb(0.26, 0.62, 0.23),
+                    Color::srgb(0.32, 0.78, 0.22),
                     4,
                 ),
                 _ => unreachable!(),

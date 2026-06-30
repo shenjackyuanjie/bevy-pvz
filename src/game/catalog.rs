@@ -246,7 +246,7 @@ impl Default for ContentCatalog {
                     card_cooldown: Duration::from_secs(4),
                     health: 120.0,
                     visual: UnitVisualDefinition {
-                        color: Color::srgb(0.12, 0.72, 0.20),
+                        color: Color::srgb(0.20, 0.88, 0.18),
                         size: Vec2::new(58.0, 68.0),
                     },
                     collider_half_size: Vec2::new(29.0, 34.0),
@@ -265,7 +265,7 @@ impl Default for ContentCatalog {
                     card_cooldown: Duration::from_secs(5),
                     health: 120.0,
                     visual: UnitVisualDefinition {
-                        color: Color::srgb(0.08, 0.58, 0.16),
+                        color: Color::srgb(0.10, 0.74, 0.14),
                         size: Vec2::new(58.0, 68.0),
                     },
                     collider_half_size: Vec2::new(29.0, 34.0),
@@ -284,7 +284,7 @@ impl Default for ContentCatalog {
                     card_cooldown: Duration::from_secs(5),
                     health: 120.0,
                     visual: UnitVisualDefinition {
-                        color: Color::srgb(0.22, 0.70, 0.82),
+                        color: Color::srgb(0.28, 0.86, 1.0),
                         size: Vec2::new(58.0, 68.0),
                     },
                     collider_half_size: Vec2::new(29.0, 34.0),
@@ -303,7 +303,7 @@ impl Default for ContentCatalog {
                     card_cooldown: Duration::from_secs(7),
                     health: 140.0,
                     visual: UnitVisualDefinition {
-                        color: Color::srgb(0.05, 0.42, 0.12),
+                        color: Color::srgb(0.06, 0.56, 0.11),
                         size: Vec2::new(62.0, 70.0),
                     },
                     collider_half_size: Vec2::new(29.0, 34.0),
@@ -384,8 +384,8 @@ impl Default for ContentCatalog {
                     kind: ProjectileKind::Pea,
                     damage: 20.0,
                     visual: ProjectileVisualDefinition {
-                        fill_color: Color::srgb(0.28, 0.92, 0.22),
-                        border_color: Color::srgb(0.06, 0.30, 0.05),
+                        fill_color: Color::srgb(0.45, 1.0, 0.14),
+                        border_color: Color::srgb(0.04, 0.26, 0.03),
                         border_width: 2.0,
                     },
                     radius: 9.0,

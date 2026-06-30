@@ -167,7 +167,7 @@ struct LawnVisual;
 
 /// 绘制底层道路、豌豆专用行、六个空中种植格，以及左侧的房子边界线。
 ///
-/// 格子颜色为统一的低饱和棋盘格，避免与豌豆弹丸和植物主体混淆。
+/// 格子颜色为统一的 PVZ 风格绿色棋盘格，避免出现上下方向的渐变。
 /// 房子边线是一条深红色竖线，表示僵尸突破即失败的边界。
 fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
     for column in 0..layout.columns {
@@ -231,9 +231,9 @@ fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
 
 fn lawn_tile_color(cell: GridCell) -> Color {
     if (i16::from(cell.column) + i16::from(cell.row)).rem_euclid(2) == 0 {
-        Color::srgb(0.34, 0.37, 0.32)
+        Color::srgb(0.34, 0.61, 0.18)
     } else {
-        Color::srgb(0.42, 0.40, 0.34)
+        Color::srgb(0.43, 0.70, 0.22)
     }
 }
 
