@@ -39,6 +39,7 @@ const ROW_THREE_PHYSICS_LINE_COUNT: usize = 20;
 const ROW_THREE_PHYSICS_LINE_ROW: i8 = 3;
 const ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY: Vec2 = Vec2::new(0.0, -20.0);
 const ROW_THREE_PHYSICS_LINE_X_JITTER: f32 = 2.0;
+const PHYSICS_PROJECTILE_RADIUS_SCALE: f32 = 0.75;
 const PHYSICS_PROJECTILE_CLEANUP_PADDING: f32 = 320.0;
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
@@ -179,9 +180,24 @@ struct ProjectileRenderAssetSet {
     fill_material: Handle<ColorMaterial>,
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+struct ProjectileRenderKey {
+    kind: ProjectileKind,
+    radius_bits: u32,
+}
+
+impl ProjectileRenderKey {
+    fn new(kind: ProjectileKind, radius: f32) -> Self {
+        Self {
+            kind,
+            radius_bits: radius.to_bits(),
+        }
+    }
+}
+
 /// 按弹丸种类复用圆形网格与纯色材质，避免每次发射都创建永久资产。
 #[derive(Resource, Default)]
-struct ProjectileRenderAssets(HashMap<ProjectileKind, ProjectileRenderAssetSet>);
+struct ProjectileRenderAssets(HashMap<ProjectileRenderKey, ProjectileRenderAssetSet>);
 
 /// 命中策略组件，控制弹丸命中后的行为。
 #[derive(Component, Debug)]
@@ -240,6 +256,7 @@ type IgnitableProjectileItem<'a> = (
     &'a mut ProjectileKind,
     &'a mut Mesh2d,
     &'a mut MeshMaterial2d<ColorMaterial>,
+    &'a ProjectileRadius,
     &'a Children,
 );
 type ProjectileFillItem<'a> = (&'a mut Mesh2d, &'a mut MeshMaterial2d<ColorMaterial>);
@@ -283,8 +300,16 @@ fn spawn_projectiles(
 ) {
     for request in requests.read() {
         let definition = catalog.projectile(request.kind);
+        let radius = match definition.motion {
+            ProjectileMotionDefinition::Path { .. } => definition.radius,
+            ProjectileMotionDefinition::Physics { .. } => {
+                physics_projectile_radius(definition.radius)
+            }
+        };
+        let visual_scale = projectile_visual_scale(definition.radius, radius);
         let render = projectile_render_assets(
             request.kind,
+            radius,
             &catalog,
             &mut meshes,
             &mut materials,
@@ -302,7 +327,7 @@ fn spawn_projectiles(
                 damage: definition.damage,
             },
             request.kind,
-            ProjectileRadius(definition.radius),
+            ProjectileRadius(radius),
             HitRegistry::default(),
             TorchwoodRegistry::default(),
             LevelEntity,
@@ -342,7 +367,7 @@ fn spawn_projectiles(
                     remaining_pierces: definition.hit_policy.max_pierces,
                 },
                 RigidBody::Dynamic,
-                Collider::ball(definition.radius),
+                Collider::ball(radius),
                 Velocity::linear(initial_velocity),
                 Restitution::coefficient(restitution),
                 Friction::coefficient(friction),
@@ -374,17 +399,25 @@ fn spawn_projectiles(
             Name::new("Projectile fill"),
         ));
         projectile.with_children(|parent| {
-            spawn_projectile_adornments(parent, request.kind);
+            spawn_projectile_adornments(parent, request.kind, visual_scale);
         });
     }
 }
 
-fn spawn_projectile_adornments(parent: &mut ChildSpawnerCommands, kind: ProjectileKind) {
+fn spawn_projectile_adornments(
+    parent: &mut ChildSpawnerCommands,
+    kind: ProjectileKind,
+    visual_scale: f32,
+) {
     for part in projectile_adornment_parts(kind) {
         parent.spawn((
-            Sprite::from_color(part.color, part.size),
-            Transform::from_xyz(part.offset.x, part.offset.y, part.z)
-                .with_rotation(Quat::from_rotation_z(part.rotation)),
+            Sprite::from_color(part.color, part.size * visual_scale),
+            Transform::from_xyz(
+                part.offset.x * visual_scale,
+                part.offset.y * visual_scale,
+                part.z,
+            )
+            .with_rotation(Quat::from_rotation_z(part.rotation)),
             ProjectileAdornment,
             Name::new(part.name),
         ));
@@ -463,26 +496,36 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
 
 fn projectile_render_assets(
     kind: ProjectileKind,
+    radius: f32,
     catalog: &ContentCatalog,
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
     render_assets: &mut ProjectileRenderAssets,
 ) -> ProjectileRenderAssetSet {
+    let key = ProjectileRenderKey::new(kind, radius);
     render_assets
         .0
-        .entry(kind)
+        .entry(key)
         .or_insert_with(|| {
             let definition = catalog.projectile(kind);
+            let visual_scale = projectile_visual_scale(definition.radius, radius);
+            let border_width = definition.visual.border_width * visual_scale;
             ProjectileRenderAssetSet {
-                border_mesh: meshes.add(Circle::new(definition.radius)),
-                fill_mesh: meshes.add(Circle::new(
-                    definition.radius - definition.visual.border_width,
-                )),
+                border_mesh: meshes.add(Circle::new(radius)),
+                fill_mesh: meshes.add(Circle::new(radius - border_width)),
                 border_material: materials.add(definition.visual.border_color),
                 fill_material: materials.add(definition.visual.fill_color),
             }
         })
         .clone()
+}
+
+fn physics_projectile_radius(base_radius: f32) -> f32 {
+    base_radius * PHYSICS_PROJECTILE_RADIUS_SCALE
+}
+
+fn projectile_visual_scale(base_radius: f32, radius: f32) -> f32 {
+    radius / base_radius
 }
 
 /// 路径弹丸运动：底排弹丸先向左到边界，再向上到 row 0，最后向右飞行。
@@ -600,7 +643,7 @@ fn spawn_row_three_physics_line(
     kind: ProjectileKind,
     spawn_seconds: f32,
 ) {
-    let radius = catalog.projectile(kind).radius;
+    let radius = physics_projectile_radius(catalog.projectile(kind).radius);
     let y = layout
         .cell_center(GridCell {
             column: 0,
@@ -690,7 +733,10 @@ fn spawn_physics_projectile_entity(
 ) {
     let definition = catalog.projectile(spec.kind);
     let physics = physics_projectile_parameters(catalog);
-    let render = projectile_render_assets(spec.kind, catalog, meshes, materials, render_assets);
+    let radius = physics_projectile_radius(definition.radius);
+    let visual_scale = projectile_visual_scale(definition.radius, radius);
+    let render =
+        projectile_render_assets(spec.kind, radius, catalog, meshes, materials, render_assets);
     let base = (
         Mesh2d(render.border_mesh),
         MeshMaterial2d(render.border_material),
@@ -701,7 +747,7 @@ fn spawn_physics_projectile_entity(
             damage: spec.damage,
         },
         spec.kind,
-        ProjectileRadius(definition.radius),
+        ProjectileRadius(radius),
         HitRegistry::default(),
         TorchwoodRegistry::default(),
         LevelEntity,
@@ -714,7 +760,7 @@ fn spawn_physics_projectile_entity(
             remaining_pierces: definition.hit_policy.max_pierces,
         },
         RigidBody::Dynamic,
-        Collider::ball(definition.radius),
+        Collider::ball(radius),
         Velocity::linear(spec.velocity),
         Restitution::coefficient(physics.restitution),
         Friction::coefficient(physics.friction),
@@ -734,7 +780,7 @@ fn spawn_physics_projectile_entity(
         Name::new("Projectile fill"),
     ));
     projectile.with_children(|parent| {
-        spawn_projectile_adornments(parent, spec.kind);
+        spawn_projectile_adornments(parent, spec.kind, visual_scale);
     });
 }
 
@@ -807,7 +853,7 @@ fn apply_projectile_ignitions(
         if !converted.insert(request.0) {
             continue;
         }
-        let Ok((mut projectile, mut kind, mut border_mesh, mut border_material, children)) =
+        let Ok((mut projectile, mut kind, mut border_mesh, mut border_material, radius, children)) =
             params.projectiles.get_mut(request.0)
         else {
             continue;
@@ -816,9 +862,12 @@ fn apply_projectile_ignitions(
         if output_kind == *kind {
             continue;
         }
-        let output_damage = params.catalog.projectile(output_kind).damage;
+        let output_definition = params.catalog.projectile(output_kind);
+        let output_damage = output_definition.damage;
+        let visual_scale = projectile_visual_scale(output_definition.radius, radius.0);
         let render = projectile_render_assets(
             output_kind,
+            radius.0,
             &params.catalog,
             &mut params.meshes,
             &mut params.materials,
@@ -837,7 +886,7 @@ fn apply_projectile_ignitions(
             }
         }
         commands.entity(request.0).with_children(|parent| {
-            spawn_projectile_adornments(parent, output_kind);
+            spawn_projectile_adornments(parent, output_kind, visual_scale);
         });
     }
 }

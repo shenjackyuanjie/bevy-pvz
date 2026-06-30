@@ -107,32 +107,48 @@ fn row_three_effect_turns_fire_pea_into_physics_fire_peas() {
 
     assert!(app.world().get_entity(source).is_err());
     let world = app.world_mut();
-    let mut query = world.query::<(&ProjectileKind, &ProjectileMotion, &Projectile, &Transform)>();
+    let mut query = world.query::<(
+        &ProjectileKind,
+        &ProjectileMotion,
+        &Projectile,
+        &ProjectileRadius,
+        &Transform,
+    )>();
     let mut spawned: Vec<_> = query
         .iter(world)
-        .map(|(kind, motion, projectile, transform)| {
+        .map(|(kind, motion, projectile, radius, transform)| {
             (
                 *kind,
                 *motion,
                 projectile.damage,
+                radius.0,
                 transform.translation.truncate(),
             )
         })
         .collect();
     assert_eq!(spawned.len(), ROW_THREE_PHYSICS_LINE_COUNT);
-    assert!(spawned.iter().all(|(kind, motion, damage, _position)| {
-        *kind == ProjectileKind::FirePea && *motion == ProjectileMotion::Physics && *damage == 40.0
-    }));
-    spawned.sort_by(|left, right| left.3.x.total_cmp(&right.3.x));
+    let expected_radius = physics_projectile_radius(
+        world
+            .resource::<ContentCatalog>()
+            .projectile(ProjectileKind::FirePea)
+            .radius,
+    );
+    assert!(
+        spawned
+            .iter()
+            .all(|(kind, motion, damage, radius, _position)| {
+                *kind == ProjectileKind::FirePea
+                    && *motion == ProjectileMotion::Physics
+                    && *damage == 40.0
+                    && (*radius - expected_radius).abs() < 0.001
+            })
+    );
+    spawned.sort_by(|left, right| left.4.x.total_cmp(&right.4.x));
 
-    let radius = world
-        .resource::<ContentCatalog>()
-        .projectile(ProjectileKind::FirePea)
-        .radius;
-    let left = layout.origin.x + radius;
-    let right = layout.right() - radius;
+    let left = layout.origin.x + expected_radius;
+    let right = layout.right() - expected_radius;
     let mut offsets = Vec::with_capacity(spawned.len());
-    for (index, (_kind, _motion, _damage, position)) in spawned.iter().enumerate() {
+    for (index, (_kind, _motion, _damage, _radius, position)) in spawned.iter().enumerate() {
         let t = index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32;
         let base_x = left + (right - left) * t;
         let offset = position.x - base_x;
@@ -224,11 +240,21 @@ fn spawn_request_builds_distinct_motion_pipelines() {
     assert!(spawned.contains(&(
         ProjectileKind::PhysicsPea,
         ProjectileMotion::Physics,
-        catalog.projectile(ProjectileKind::PhysicsPea).radius,
+        physics_projectile_radius(catalog.projectile(ProjectileKind::PhysicsPea).radius),
         Some(RigidBody::Dynamic),
         false,
         true,
     )));
+}
+
+#[test]
+fn physics_projectiles_use_smaller_radius_than_path_peas() {
+    let catalog = ContentCatalog::default();
+
+    assert!(
+        physics_projectile_radius(catalog.projectile(ProjectileKind::PhysicsPea).radius)
+            < catalog.projectile(ProjectileKind::Pea).radius
+    );
 }
 
 #[test]
