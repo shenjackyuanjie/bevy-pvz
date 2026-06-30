@@ -17,53 +17,88 @@
         (slot: 6, plant: Torchwood),
     ],
     waves: [
-        // ========== 前期：热身 (waves 1-5) ==========
-        (delay: 8.0, kind: Basic, count: 3, interval: 3.5),
-        (delay: 10.0, kind: Basic, count: 4, interval: 3.0),
-        (delay: 9.0, kind: Conehead, count: 2, interval: 1.8),
-        (delay: 10.0, kind: Basic, count: 5, interval: 2.5),
-        (delay: 9.0, kind: PoleVaulting, count: 2, interval: 1.0),
+        // ========== 第 1 大波：前期热身 ==========
+        (
+            delay: 8.0,
+            wave: [
+                (delay: 0.0, kind: Basic, count: 3, interval: 3.5),
+                (delay: 17.0, kind: Basic, count: 4, interval: 3.0),
+                (delay: 35.0, kind: Conehead, count: 2, interval: 1.8),
+                (delay: 46.8, kind: Basic, count: 5, interval: 2.5),
+                (delay: 65.8, kind: PoleVaulting, count: 2, interval: 1.0),
+            ],
+        ),
 
-        // ========== 中期：加温 (waves 6-10) ==========
-        (delay: 10.0, kind: Basic, count: 5, interval: 2.5),
-        (delay: 8.0, kind: Conehead, count: 3, interval: 1.5),
-        (delay: 8.0, kind: Newspaper, count: 2, interval: 1.0),
-        (delay: 10.0, kind: ScreenDoor, count: 2, interval: 1.5),
-        (delay: 9.0, kind: Buckethead, count: 2, interval: 1.5),
+        // ========== 第 2 大波：中期加温 ==========
+        (
+            delay: 10.0,
+            wave: [
+                (delay: 0.0, kind: Basic, count: 5, interval: 2.5),
+                (delay: 18.0, kind: Conehead, count: 3, interval: 1.5),
+                (delay: 29.0, kind: Newspaper, count: 2, interval: 1.0),
+                (delay: 40.0, kind: ScreenDoor, count: 2, interval: 1.5),
+                (delay: 50.5, kind: Buckethead, count: 2, interval: 1.5),
+            ],
+        ),
 
-        // ========== 中后期：上强度 (waves 11-15) ==========
-        (delay: 10.0, kind: Basic, count: 6, interval: 2.0),
-        (delay: 8.0, kind: Conehead, count: 3, interval: 1.2),
-        (delay: 8.0, kind: ScreenDoor, count: 2, interval: 1.0),
-        (delay: 12.0, kind: Football, count: 3, interval: 1.0),
-        (delay: 10.0, kind: Zomboni, count: 2, interval: 1.5),
+        // ========== 第 3 大波：中后期上强度 ==========
+        (
+            delay: 10.0,
+            wave: [
+                (delay: 0.0, kind: Basic, count: 6, interval: 2.0),
+                (delay: 18.0, kind: Conehead, count: 3, interval: 1.2),
+                (delay: 28.4, kind: ScreenDoor, count: 2, interval: 1.0),
+                (delay: 41.4, kind: Football, count: 3, interval: 1.0),
+                (delay: 53.4, kind: Zomboni, count: 2, interval: 1.5),
+            ],
+        ),
 
-        // ========== 后期：开始坐牢 (waves 16-20) ==========
-        (delay: 10.0, kind: Buckethead, count: 4, interval: 1.0),
-        (delay: 8.0, kind: JackInTheBox, count: 2, interval: 1.0),
-        (delay: 8.0, kind: Balloon, count: 2, interval: 1.0),
-        (delay: 12.0, kind: Football, count: 4, interval: 1.0),
-        (delay: 10.0, kind: Gargantuar, count: 1, interval: 1.0),
+        // ========== 第 4 大波：后期开始坐牢 ==========
+        (
+            delay: 10.0,
+            wave: [
+                (delay: 0.0, kind: Buckethead, count: 4, interval: 1.0),
+                (delay: 11.0, kind: JackInTheBox, count: 2, interval: 1.0),
+                (delay: 20.0, kind: Balloon, count: 2, interval: 1.0),
+                (delay: 33.0, kind: Football, count: 4, interval: 1.0),
+                (delay: 46.0, kind: Gargantuar, count: 1, interval: 1.0),
+            ],
+        ),
 
-        // ========== 大后期：地狱模式 (waves 21-25) ==========
-        (delay: 10.0, kind: Catapult, count: 2, interval: 1.2),
-        (delay: 8.0, kind: Digger, count: 2, interval: 1.0),
-        (delay: 8.0, kind: Pogo, count: 2, interval: 1.0),
-        (delay: 8.0, kind: Imp, count: 3, interval: 0.6),
-        (delay: 12.0, kind: Gargantuar, count: 2, interval: 2.0),
+        // ========== 第 5 大波：大后期地狱模式 ==========
+        (
+            delay: 10.0,
+            wave: [
+                (delay: 0.0, kind: Catapult, count: 2, interval: 1.2),
+                (delay: 9.2, kind: Digger, count: 2, interval: 1.0),
+                (delay: 18.2, kind: Pogo, count: 2, interval: 1.0),
+                (delay: 27.2, kind: Imp, count: 3, interval: 0.6),
+                (delay: 40.4, kind: Gargantuar, count: 2, interval: 2.0),
+            ],
+        ),
 
-        // ========== 终极冲锋 (waves 26-30) ==========
-        (delay: 8.0, kind: Imp, count: 4, interval: 0.6),
-        (delay: 10.0, kind: Football, count: 5, interval: 0.8),
-        (delay: 8.0, kind: JackInTheBox, count: 2, interval: 0.8),
-        (delay: 12.0, kind: Gargantuar, count: 2, interval: 1.5),
-        (delay: 10.0, kind: Zomboni, count: 3, interval: 1.0),
+        // ========== 第 6 大波：终极冲锋 ==========
+        (
+            delay: 8.0,
+            wave: [
+                (delay: 0.0, kind: Imp, count: 4, interval: 0.6),
+                (delay: 11.8, kind: Football, count: 5, interval: 0.8),
+                (delay: 23.0, kind: JackInTheBox, count: 2, interval: 0.8),
+                (delay: 35.8, kind: Gargantuar, count: 2, interval: 1.5),
+                (delay: 47.3, kind: Zomboni, count: 3, interval: 1.0),
+            ],
+        ),
 
-        // ========== 最终波：尸潮 (waves 31-35) ==========
-        (delay: 12.0, kind: Gargantuar, count: 2, interval: 1.2),
-        (delay: 8.0, kind: Imp, count: 4, interval: 0.5),
-        (delay: 10.0, kind: Catapult, count: 3, interval: 1.0),
-        (delay: 10.0, kind: Football, count: 4, interval: 0.7),
-        (delay: 12.0, kind: GigaGargantuar, count: 1, interval: 1.0),
+        // ========== 第 7 大波：最终尸潮 ==========
+        (
+            delay: 12.0,
+            wave: [
+                (delay: 0.0, kind: Gargantuar, count: 2, interval: 1.2),
+                (delay: 9.2, kind: Imp, count: 4, interval: 0.5),
+                (delay: 20.7, kind: Catapult, count: 3, interval: 1.0),
+                (delay: 32.7, kind: Football, count: 4, interval: 0.7),
+                (delay: 46.8, kind: GigaGargantuar, count: 1, interval: 1.0),
+            ],
+        ),
     ],
 )
