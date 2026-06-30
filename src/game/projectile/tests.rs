@@ -181,6 +181,57 @@ fn spawn_request_builds_distinct_motion_pipelines() {
 }
 
 #[test]
+fn ice_and_fire_adornments_stay_inside_projectile_body() {
+    let catalog = ContentCatalog::default();
+    for kind in [ProjectileKind::IcePea, ProjectileKind::FirePea] {
+        let radius = catalog.projectile(kind).radius;
+        for part in projectile_adornment_parts(kind) {
+            assert!(
+                part.offset.x.abs() + part.size.x * 0.5 <= radius,
+                "{:?} adornment {} exceeds projectile width",
+                kind,
+                part.name
+            );
+            assert!(
+                part.offset.y.abs() + part.size.y * 0.5 <= radius,
+                "{:?} adornment {} exceeds projectile height",
+                kind,
+                part.name
+            );
+        }
+    }
+}
+
+#[test]
+fn physics_projectile_cleanup_uses_larger_bounds() {
+    let half_window = Vec2::new(640.0, 360.0);
+    let radius = 9.0;
+    let path_outside = Vec2::new(half_window.x + radius + 1.0, 0.0);
+
+    assert!(projectile_outside_cleanup_bounds(
+        path_outside,
+        radius,
+        half_window,
+        0.0
+    ));
+    assert!(!projectile_outside_cleanup_bounds(
+        path_outside,
+        radius,
+        half_window,
+        PHYSICS_PROJECTILE_CLEANUP_PADDING
+    ));
+    assert!(projectile_outside_cleanup_bounds(
+        Vec2::new(
+            half_window.x + PHYSICS_PROJECTILE_CLEANUP_PADDING + radius + 1.0,
+            0.0,
+        ),
+        radius,
+        half_window,
+        PHYSICS_PROJECTILE_CLEANUP_PADDING
+    ));
+}
+
+#[test]
 fn ignition_changes_damage_kind_and_render_assets() {
     let mut app = App::new();
     app.add_message::<SpawnProjectile>()

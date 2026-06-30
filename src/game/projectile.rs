@@ -38,6 +38,7 @@ const FIRE_SPLASH_HALF_SIZE: Vec2 = Vec2::new(52.0, 36.0);
 const ROW_THREE_PHYSICS_LINE_COUNT: usize = 20;
 const ROW_THREE_PHYSICS_LINE_ROW: i8 = 3;
 const ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY: Vec2 = Vec2::new(0.0, -20.0);
+const PHYSICS_PROJECTILE_CLEANUP_PADDING: f32 = 320.0;
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
 pub struct ProjectilePlugin;
@@ -81,7 +82,7 @@ impl Plugin for ProjectilePlugin {
             )
             .add_systems(
                 FixedUpdate,
-                cleanup_path_projectiles_outside_window
+                cleanup_projectiles_outside_window
                     .in_set(GameSet::DeathAndCleanup)
                     .run_if(in_state(GameState::Playing)),
             );
@@ -414,7 +415,7 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
             ProjectileAdornmentPart {
                 name: "冰豌豆内核",
                 color: Color::srgba(0.78, 0.98, 1.0, 0.82),
-                size: Vec2::new(10.0, 5.0),
+                size: Vec2::new(8.0, 4.0),
                 offset: Vec2::new(0.0, 0.0),
                 rotation: 0.0,
                 z: 0.18,
@@ -422,7 +423,7 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
             ProjectileAdornmentPart {
                 name: "冰晶横刺",
                 color: Color::srgba(0.88, 1.0, 1.0, 0.88),
-                size: Vec2::new(17.0, 2.0),
+                size: Vec2::new(10.0, 2.0),
                 offset: Vec2::new(0.0, 0.0),
                 rotation: 0.18,
                 z: 0.22,
@@ -430,7 +431,7 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
             ProjectileAdornmentPart {
                 name: "冰晶竖刺",
                 color: Color::srgba(0.72, 0.92, 1.0, 0.82),
-                size: Vec2::new(2.0, 16.0),
+                size: Vec2::new(2.0, 10.0),
                 offset: Vec2::new(0.0, 0.0),
                 rotation: -0.18,
                 z: 0.23,
@@ -441,16 +442,16 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
             ProjectileAdornmentPart {
                 name: "火豌豆尾焰",
                 color: Color::srgba(1.0, 0.16, 0.03, 0.62),
-                size: Vec2::new(18.0, 8.0),
-                offset: Vec2::new(-11.0, 0.0),
+                size: Vec2::new(8.0, 5.0),
+                offset: Vec2::new(-4.0, 0.0),
                 rotation: 0.0,
                 z: 0.16,
             },
             ProjectileAdornmentPart {
                 name: "火豌豆内焰",
                 color: Color::srgba(1.0, 0.86, 0.08, 0.80),
-                size: Vec2::new(9.0, 4.0),
-                offset: Vec2::new(-7.0, 0.0),
+                size: Vec2::new(6.0, 3.0),
+                offset: Vec2::new(-3.0, 0.0),
                 rotation: 0.0,
                 z: 0.22,
             },
@@ -996,23 +997,39 @@ fn ice_pea_chills(kind: ZombieKind, equipment: Option<&EquipmentHealth>) -> bool
     }
 }
 
-/// 普通路径豌豆完全飞出当前窗口后销毁；物理豌豆不参与此清理。
-fn cleanup_path_projectiles_outside_window(
+/// 路径豌豆飞出窗口后销毁；物理豌豆使用更大的窗口外边界，避免离场后长期留存。
+fn cleanup_projectiles_outside_window(
     mut commands: Commands,
     window: Single<&Window, With<PrimaryWindow>>,
-    projectiles: Query<(Entity, &Transform, &ProjectileRadius), With<PathVelocity>>,
+    projectiles: Query<
+        (Entity, &Transform, &ProjectileRadius, &ProjectileMotion),
+        With<Projectile>,
+    >,
 ) {
     let half_window = Vec2::new(window.resolution.width(), window.resolution.height()) * 0.5;
-    for (entity, transform, radius) in &projectiles {
+    for (entity, transform, radius, motion) in &projectiles {
         let position = transform.translation.truncate();
-        if position.x + radius.0 < -half_window.x
-            || position.x - radius.0 > half_window.x
-            || position.y + radius.0 < -half_window.y
-            || position.y - radius.0 > half_window.y
-        {
+        let padding = match motion {
+            ProjectileMotion::Path => 0.0,
+            ProjectileMotion::Physics => PHYSICS_PROJECTILE_CLEANUP_PADDING,
+        };
+        if projectile_outside_cleanup_bounds(position, radius.0, half_window, padding) {
             commands.entity(entity).despawn();
         }
     }
+}
+
+fn projectile_outside_cleanup_bounds(
+    position: Vec2,
+    radius: f32,
+    half_window: Vec2,
+    padding: f32,
+) -> bool {
+    let bounds = half_window + Vec2::splat(padding);
+    position.x + radius < -bounds.x
+        || position.x - radius > bounds.x
+        || position.y + radius < -bounds.y
+        || position.y - radius > bounds.y
 }
 
 /// 调试用：N 键发射普通豌豆，P 键发射物理豌豆（沙盒模式）。
