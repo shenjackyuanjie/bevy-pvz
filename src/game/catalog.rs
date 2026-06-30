@@ -16,6 +16,7 @@ pub struct UnitVisualDefinition {
 #[derive(Component, Debug, Clone, Copy, Eq, PartialEq, Hash, serde::Deserialize)]
 pub enum PlantKind {
     Sunflower,
+    TwinSunflower,
     Peashooter,
     SnowPea,
     Repeater,
@@ -25,8 +26,9 @@ pub enum PlantKind {
 }
 
 impl PlantKind {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Sunflower,
+        Self::TwinSunflower,
         Self::Peashooter,
         Self::SnowPea,
         Self::Repeater,
@@ -236,6 +238,23 @@ impl Default for ContentCatalog {
                     behavior: PlantBehavior::SunProducer {
                         interval: Duration::from_secs(7),
                         value: 25,
+                        spawn_offset: Vec2::new(18.0, 24.0),
+                    },
+                },
+                PlantDefinition {
+                    kind: PlantKind::TwinSunflower,
+                    display_name: "双头向日葵",
+                    price: 150,
+                    card_cooldown: Duration::from_secs(7),
+                    health: 120.0,
+                    visual: UnitVisualDefinition {
+                        color: Color::srgb(1.0, 0.72, 0.10),
+                        size: Vec2::new(68.0, 74.0),
+                    },
+                    collider_half_size: Vec2::new(29.0, 34.0),
+                    behavior: PlantBehavior::SunProducer {
+                        interval: Duration::from_secs(7),
+                        value: 50,
                         spawn_offset: Vec2::new(18.0, 24.0),
                     },
                 },

@@ -304,6 +304,11 @@ fn plant_placement_target(
     if !plant_can_occupy(kind, cell) || !cell_in_layout {
         return None;
     }
+    if kind == PlantKind::TwinSunflower {
+        let entity = occupied?;
+        return (occupied_kind == Some(PlantKind::Sunflower))
+            .then_some(PlantPlacement::Replace(entity));
+    }
     if gatling_upgrade_only && kind == PlantKind::GatlingPea {
         let entity = occupied?;
         return (occupied_kind == Some(PlantKind::Repeater))
@@ -315,7 +320,7 @@ fn plant_placement_target(
 /// 空中格只接受向日葵，row 0 只接受坚果/火炬，row -1 只接受豌豆/火炬。
 fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
     match kind {
-        PlantKind::Sunflower => cell.is_elevated(),
+        PlantKind::Sunflower | PlantKind::TwinSunflower => cell.is_elevated(),
         PlantKind::Peashooter
         | PlantKind::SnowPea
         | PlantKind::Repeater
@@ -494,6 +499,8 @@ mod tests {
 
         assert!(!plant_can_occupy(PlantKind::Sunflower, ground));
         assert!(plant_can_occupy(PlantKind::Sunflower, elevated));
+        assert!(plant_can_occupy(PlantKind::TwinSunflower, elevated));
+        assert!(!plant_can_occupy(PlantKind::TwinSunflower, peashooter_row));
         assert!(!plant_can_occupy(PlantKind::Peashooter, ground));
         assert!(!plant_can_occupy(PlantKind::Peashooter, elevated));
         assert!(plant_can_occupy(PlantKind::Peashooter, peashooter_row));
@@ -572,6 +579,49 @@ mod tests {
         assert_eq!(
             plant_placement_target(PlantKind::GatlingPea, cell, false, true, false, None, None),
             None
+        );
+    }
+
+    #[test]
+    fn twin_sunflower_requires_a_sunflower_target() {
+        let cell = GridCell { column: 0, row: 2 };
+        let sunflower = Entity::PLACEHOLDER;
+
+        assert_eq!(
+            plant_placement_target(
+                PlantKind::TwinSunflower,
+                cell,
+                false,
+                true,
+                true,
+                None,
+                None
+            ),
+            None
+        );
+        assert_eq!(
+            plant_placement_target(
+                PlantKind::TwinSunflower,
+                cell,
+                false,
+                true,
+                false,
+                Some(sunflower),
+                Some(PlantKind::Peashooter),
+            ),
+            None
+        );
+        assert_eq!(
+            plant_placement_target(
+                PlantKind::TwinSunflower,
+                cell,
+                false,
+                true,
+                false,
+                Some(sunflower),
+                Some(PlantKind::Sunflower),
+            ),
+            Some(PlantPlacement::Replace(sunflower))
         );
     }
 

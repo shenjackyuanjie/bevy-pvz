@@ -39,69 +39,33 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
     ];
 
     match kind {
-        PlantKind::Sunflower => {
-            let yellow = Color::srgb(1.0, 0.76, 0.08);
-            let flower_center = Vec2::new(0.0, 15.0);
-            for index in 0..8 {
-                let rotation = index as f32 * std::f32::consts::FRAC_PI_4;
-                let offset = flower_center + Vec2::from_angle(rotation) * 16.0;
-                parts.push(part(
-                    "向日葵花瓣",
-                    yellow,
-                    Vec2::new(22.0, 10.0),
-                    offset,
-                    rotation,
-                    0.2,
-                    alpha,
-                ));
+        PlantKind::Sunflower | PlantKind::TwinSunflower => {
+            if kind == PlantKind::TwinSunflower {
+                parts.extend([
+                    part(
+                        "双头向日葵左分茎",
+                        green,
+                        Vec2::new(7.0, 27.0),
+                        Vec2::new(-8.0, -2.0),
+                        0.32,
+                        0.05,
+                        alpha,
+                    ),
+                    part(
+                        "双头向日葵右分茎",
+                        green,
+                        Vec2::new(7.0, 27.0),
+                        Vec2::new(9.0, -2.0),
+                        -0.32,
+                        0.05,
+                        alpha,
+                    ),
+                ]);
+                add_sunflower_head(&mut parts, Vec2::new(-12.0, 16.0), 0.72, alpha);
+                add_sunflower_head(&mut parts, Vec2::new(13.0, 16.0), 0.72, alpha);
+            } else {
+                add_sunflower_head(&mut parts, Vec2::new(0.0, 15.0), 1.0, alpha);
             }
-            parts.extend([
-                part(
-                    "向日葵外花盘",
-                    Color::srgb(0.38, 0.16, 0.03),
-                    Vec2::splat(29.0),
-                    flower_center,
-                    0.0,
-                    0.3,
-                    alpha,
-                ),
-                part(
-                    "向日葵内花盘",
-                    Color::srgb(0.66, 0.34, 0.08),
-                    Vec2::splat(21.0),
-                    flower_center,
-                    0.0,
-                    0.4,
-                    alpha * 0.92,
-                ),
-                part(
-                    "向日葵左眼",
-                    Color::srgb(0.10, 0.04, 0.01),
-                    Vec2::new(3.0, 5.0),
-                    flower_center + Vec2::new(-5.0, 2.0),
-                    0.0,
-                    0.5,
-                    alpha,
-                ),
-                part(
-                    "向日葵右眼",
-                    Color::srgb(0.10, 0.04, 0.01),
-                    Vec2::new(3.0, 5.0),
-                    flower_center + Vec2::new(5.0, 2.0),
-                    0.0,
-                    0.5,
-                    alpha,
-                ),
-                part(
-                    "向日葵微笑",
-                    Color::srgb(0.18, 0.05, 0.01),
-                    Vec2::new(9.0, 3.0),
-                    flower_center + Vec2::new(0.0, -5.0),
-                    0.0,
-                    0.5,
-                    alpha,
-                ),
-            ]);
         }
         PlantKind::Peashooter
         | PlantKind::SnowPea
@@ -432,4 +396,68 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
         }
     }
     parts
+}
+
+fn add_sunflower_head(parts: &mut Vec<ModelPart>, flower_center: Vec2, scale: f32, alpha: f32) {
+    let yellow = Color::srgb(1.0, 0.76, 0.08);
+    for index in 0..8 {
+        let rotation = index as f32 * std::f32::consts::FRAC_PI_4;
+        let offset = flower_center + Vec2::from_angle(rotation) * 16.0 * scale;
+        parts.push(part(
+            "向日葵花瓣",
+            yellow,
+            Vec2::new(22.0, 10.0) * scale,
+            offset,
+            rotation,
+            0.2,
+            alpha,
+        ));
+    }
+    parts.extend([
+        part(
+            "向日葵外花盘",
+            Color::srgb(0.38, 0.16, 0.03),
+            Vec2::splat(29.0 * scale),
+            flower_center,
+            0.0,
+            0.3,
+            alpha,
+        ),
+        part(
+            "向日葵内花盘",
+            Color::srgb(0.66, 0.34, 0.08),
+            Vec2::splat(21.0 * scale),
+            flower_center,
+            0.0,
+            0.4,
+            alpha * 0.92,
+        ),
+        part(
+            "向日葵左眼",
+            Color::srgb(0.10, 0.04, 0.01),
+            Vec2::new(3.0, 5.0) * scale,
+            flower_center + Vec2::new(-5.0, 2.0) * scale,
+            0.0,
+            0.5,
+            alpha,
+        ),
+        part(
+            "向日葵右眼",
+            Color::srgb(0.10, 0.04, 0.01),
+            Vec2::new(3.0, 5.0) * scale,
+            flower_center + Vec2::new(5.0, 2.0) * scale,
+            0.0,
+            0.5,
+            alpha,
+        ),
+        part(
+            "向日葵微笑",
+            Color::srgb(0.18, 0.05, 0.01),
+            Vec2::new(9.0, 3.0) * scale,
+            flower_center + Vec2::new(0.0, -5.0) * scale,
+            0.0,
+            0.5,
+            alpha,
+        ),
+    ]);
 }
