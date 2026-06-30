@@ -92,7 +92,7 @@ fn row_three_physics_line_uses_six_waves_and_ends_at_six_minutes_five_seconds() 
             .iter()
             .map(|wave| wave.spawns.len())
             .sum::<usize>(),
-        2671
+        6103
     );
     assert_eq!(level.waves[0].start_seconds, 8.0);
     assert_eq!(level.waves[0].spawns.last().unwrap().at_seconds, 64.0);

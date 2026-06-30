@@ -4,15 +4,15 @@
 
 TARGET_LAST_SPAWN_SECONDS = 6 * 60 + 5
 
-# Output six waves. Wave 1 stays by itself so the opener does not become a spike;
-# later original waves are folded into denser composite waves.
+# Output six waves, then promote the full intensity of each following wave into
+# the current wave. The final wave doubles its own intensity as the next tier.
 WAVE_GROUPS = [
-    (0, 1, "第 1 波：热身 — 原第 1 波，节奏保持"),
-    (1, 6, "第 2 波：加压 — 压缩原第 2-6 波"),
-    (6, 11, "第 3 波：巨人集结 — 压缩原第 7-11 波"),
-    (11, 16, "第 4 波：全面战争 — 压缩原第 12-16 波"),
-    (16, 21, "第 5 波：绝望之潮 — 压缩原第 17-21 波"),
-    (21, 25, "第 6 波：终局之战 — 压缩原第 22-25 波"),
+    (0, 1, "第 1 波：强压开场 — 叠加第 2 波完整强度"),
+    (1, 6, "第 2 波：巨人入场 — 叠加第 3 波完整强度"),
+    (6, 11, "第 3 波：全面战争 — 叠加第 4 波完整强度"),
+    (11, 16, "第 4 波：绝望之潮 — 叠加第 5 波完整强度"),
+    (16, 21, "第 5 波：终局前夜 — 叠加第 6 波完整强度"),
+    (21, 25, "第 6 波：终局翻倍 — 再叠加一轮终局强度"),
 ]
 
 # Extra output-wave fillers for waves 3-6. Each entry is:
@@ -472,8 +472,35 @@ def add_late_wave_fillers(waves, filler_config):
     return filled
 
 
+def promote_next_wave_intensity(waves):
+    promoted = []
+    for wave_index, (delay, entries) in enumerate(waves):
+        target_duration = wave_duration(entries)
+        source_entries = waves[min(wave_index + 1, len(waves) - 1)][1]
+        source_duration = wave_duration(source_entries)
+
+        # Keep the promoted pattern inside the original wave boundary so the
+        # overall 365-second timeline remains unchanged and spawn points differ.
+        time_scale = target_duration * 0.94 / source_duration
+        time_offset = target_duration * 0.03
+        promoted_entries = list(entries)
+        promoted_entries.extend(
+            (
+                time_offset + entry_delay * time_scale,
+                kind,
+                count,
+                interval * time_scale,
+            )
+            for entry_delay, kind, count, interval in source_entries
+        )
+        promoted_entries.sort(key=lambda entry: (entry[0], entry[1]))
+        promoted.append((delay, promoted_entries))
+    return promoted
+
+
 waves_config, time_scale = grouped_scaled_waves_config(BASE_WAVES_CONFIG, WAVE_GROUPS)
 waves_config = add_late_wave_fillers(waves_config, LATE_WAVE_FILLERS)
+waves_config = promote_next_wave_intensity(waves_config)
 
 # =============================================
 # Timing Analysis
