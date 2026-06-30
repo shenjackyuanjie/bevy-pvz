@@ -268,7 +268,7 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
     }
 }
 
-/// 空中格只接受向日葵，row 0 只接受坚果/火炬，row -2 只接受豌豆/火炬。
+/// 空中格只接受向日葵，row 0 只接受坚果/火炬，row -1 只接受豌豆/火炬。
 fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
     match kind {
         PlantKind::Sunflower => cell.is_elevated(),
@@ -443,7 +443,7 @@ mod tests {
     fn plant_rows_enforce_their_specializations() {
         let ground = GridCell { column: 4, row: 0 };
         let elevated = GridCell { column: 0, row: 2 };
-        let peashooter_row = GridCell { column: 4, row: -2 };
+        let peashooter_row = GridCell { column: 4, row: -1 };
 
         assert!(!plant_can_occupy(PlantKind::Sunflower, ground));
         assert!(plant_can_occupy(PlantKind::Sunflower, elevated));
@@ -464,7 +464,7 @@ mod tests {
     fn lower_row_projectiles_start_locally_and_carry_a_left_edge_path() {
         let layout = LawnLayout::default();
         let muzzle = Vec2::new(36.0, 12.0);
-        let lower = GridCell { column: 7, row: -2 };
+        let lower = GridCell { column: 7, row: -1 };
         let plant_position = layout.cell_center(lower);
         let (origin, route) = shooter_projectile_route(&layout, lower, plant_position, muzzle);
 

@@ -87,7 +87,7 @@ fn ron_wave_entries_are_relative_to_their_wave_start() {
                 columns: 9,
                 cell_size: (90.0, 90.0),
                 center_x: -50.0,
-                path_y: -125.0,
+                path_y: -215.0,
             ),
             cards: [
                 (slot: 1, plant: Sunflower),
@@ -150,7 +150,7 @@ fn ron_level_reads_always_shoot_option() {
                 columns: 9,
                 cell_size: (90.0, 90.0),
                 center_x: -50.0,
-                path_y: -125.0,
+                path_y: -215.0,
             ),
             cards: [
                 (slot: 1, plant: Peashooter),

@@ -20,14 +20,14 @@ pub const LAWN_COLUMNS: u8 = 9;
 /// 空中种植格所在的两行；底层草坪为第 0 行，第 1 行刻意留空。
 pub const AIR_ROWS: [i8; 2] = [2, 3];
 
-/// 豌豆射手专用行；与底层草坪之间的第 -1 行刻意留空。
-pub const PEASHOOTER_ROW: i8 = -2;
+/// 豌豆射手专用行；位于底层草坪下方一行。
+pub const PEASHOOTER_ROW: i8 = -1;
 
 /// 草坪相对世界中心向左偏移 50 像素。
 pub const LAWN_CENTER_X: f32 = -50.0;
 
-/// 道路中心 Y 坐标；上移一格以让下方专用行完整位于窗口内。
-pub const LAWN_PATH_Y: f32 = -125.0;
+/// 道路中心 Y 坐标；下移一格以给顶部 UI 留出空间。
+pub const LAWN_PATH_Y: f32 = -215.0;
 
 /// 草坪插件，初始化 [`LawnLayout`] 和 [`CellOccupancy`] 资源，
 /// 并在进入 Playing 状态时绘制棋盘视觉格子。
@@ -126,7 +126,7 @@ impl LawnLayout {
 pub struct GridCell {
     /// 列号（0 到 `columns - 1`）。
     pub column: u8,
-    /// 行号；0 是僵尸道路，-2 是豌豆专用行，2 和 3 是空中种植位。
+    /// 行号；0 是僵尸道路，-1 是豌豆专用行，2 和 3 是空中种植位。
     pub row: i8,
 }
 
@@ -280,7 +280,7 @@ mod tests {
             None
         );
         assert_eq!(
-            layout.world_to_cell(layout.origin + layout.cell_size * Vec2::new(0.5, -0.5)),
+            layout.world_to_cell(layout.origin + layout.cell_size * Vec2::new(0.5, -1.5)),
             None
         );
         assert_eq!(
@@ -298,7 +298,7 @@ mod tests {
     fn lawn_tiles_use_only_checkerboard_colors() {
         let ground = GridCell { column: 2, row: 0 };
         let lower_same_parity = GridCell {
-            column: 4,
+            column: 3,
             row: PEASHOOTER_ROW,
         };
         let elevated_same_parity = GridCell { column: 0, row: 2 };
