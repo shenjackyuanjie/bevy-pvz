@@ -167,18 +167,13 @@ struct LawnVisual;
 
 /// 绘制底层道路、豌豆专用行、六个空中种植格，以及左侧的房子边界线。
 ///
-/// 格子颜色为深浅交替的绿色，模拟原版 PvZ 草坪风格。
+/// 格子颜色为统一的低饱和棋盘格，避免与豌豆弹丸和植物主体混淆。
 /// 房子边线是一条深红色竖线，表示僵尸突破即失败的边界。
 fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
     for column in 0..layout.columns {
         let cell = GridCell { column, row: 0 };
-        let color = if column % 2 == 0 {
-            Color::srgb(0.24, 0.55, 0.22)
-        } else {
-            Color::srgb(0.29, 0.62, 0.25)
-        };
         commands.spawn((
-            Sprite::from_color(color, layout.cell_size - Vec2::splat(2.0)),
+            Sprite::from_color(lawn_tile_color(cell), layout.cell_size - Vec2::splat(2.0)),
             Transform::from_translation(layout.cell_center(cell).extend(-10.0)),
             LawnVisual,
             LevelEntity,
@@ -191,13 +186,8 @@ fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
             column,
             row: PEASHOOTER_ROW,
         };
-        let color = if column % 2 == 0 {
-            Color::srgb(0.20, 0.46, 0.19)
-        } else {
-            Color::srgb(0.24, 0.52, 0.21)
-        };
         commands.spawn((
-            Sprite::from_color(color, layout.cell_size - Vec2::splat(2.0)),
+            Sprite::from_color(lawn_tile_color(cell), layout.cell_size - Vec2::splat(2.0)),
             Transform::from_translation(layout.cell_center(cell).extend(-10.0)),
             LawnVisual,
             LevelEntity,
@@ -215,13 +205,8 @@ fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
             if !layout.contains(cell) {
                 continue;
             }
-            let color = if (i16::from(column) + i16::from(row)) % 2 == 0 {
-                Color::srgb(0.36, 0.68, 0.31)
-            } else {
-                Color::srgb(0.31, 0.62, 0.27)
-            };
             commands.spawn((
-                Sprite::from_color(color, layout.cell_size - Vec2::splat(2.0)),
+                Sprite::from_color(lawn_tile_color(cell), layout.cell_size - Vec2::splat(2.0)),
                 Transform::from_translation(layout.cell_center(cell).extend(-10.0)),
                 LawnVisual,
                 LevelEntity,
@@ -242,6 +227,14 @@ fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
         LevelEntity,
         Name::new("House breach line"),
     ));
+}
+
+fn lawn_tile_color(cell: GridCell) -> Color {
+    if (i16::from(cell.column) + i16::from(cell.row)).rem_euclid(2) == 0 {
+        Color::srgb(0.34, 0.37, 0.32)
+    } else {
+        Color::srgb(0.42, 0.40, 0.34)
+    }
 }
 
 #[cfg(test)]
@@ -299,5 +292,23 @@ mod tests {
         assert!(occupancy.is_available(cell, &layout));
         occupancy.0.insert(cell, Entity::PLACEHOLDER);
         assert!(!occupancy.is_available(cell, &layout));
+    }
+
+    #[test]
+    fn lawn_tiles_use_only_checkerboard_colors() {
+        let ground = GridCell { column: 2, row: 0 };
+        let lower_same_parity = GridCell {
+            column: 4,
+            row: PEASHOOTER_ROW,
+        };
+        let elevated_same_parity = GridCell { column: 0, row: 2 };
+        let adjacent = GridCell { column: 3, row: 0 };
+
+        assert_eq!(lawn_tile_color(ground), lawn_tile_color(lower_same_parity));
+        assert_eq!(
+            lawn_tile_color(ground),
+            lawn_tile_color(elevated_same_parity)
+        );
+        assert_ne!(lawn_tile_color(ground), lawn_tile_color(adjacent));
     }
 }
