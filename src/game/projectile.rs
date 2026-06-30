@@ -20,7 +20,9 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-use crate::game::catalog::{ColliderHalfSize, ContentCatalog, ProjectileMotionDefinition};
+use crate::game::catalog::{
+    ColliderCenterOffset, ColliderHalfSize, ContentCatalog, ProjectileMotionDefinition,
+};
 use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Team};
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
@@ -915,18 +917,18 @@ type PathProjectileFilter = (With<Projectile>, With<PathVelocity>);
 /// 检测是否与道路上的僵尸发生碰撞（使用 swept_circle_hit_t 算法），取最近的命中。
 fn query_path_projectile_hits(
     projectiles: Query<PathProjectileData<'_>, PathProjectileFilter>,
-    zombies: Query<(Entity, &Transform, &ColliderHalfSize), With<Zombie>>,
+    zombies: Query<(Entity, &Transform, &ColliderHalfSize, &ColliderCenterOffset), With<Zombie>>,
     mut hits: MessageWriter<ProjectileHit>,
 ) {
     for (projectile, transform, previous, registry, radius) in &projectiles {
         let end = transform.translation.truncate();
         let mut nearest: Option<(f32, Entity)> = None;
 
-        for (zombie, zombie_transform, collider) in &zombies {
+        for (zombie, zombie_transform, collider, collider_offset) in &zombies {
             if registry.0.contains(&zombie) {
                 continue;
             }
-            let center = zombie_transform.translation.truncate();
+            let center = zombie_transform.translation.truncate() + collider_offset.0;
             if let Some(t) = swept_circle_hit_t(previous.0, end, center, collider.0, radius.0)
                 && nearest.is_none_or(|(best_t, _)| t < best_t)
             {

@@ -15,10 +15,10 @@ use bevy_rapier2d::prelude::*;
 use std::time::Duration;
 
 use crate::game::assets::GameAssets;
-use crate::game::catalog::{ColliderHalfSize, ContentCatalog};
+use crate::game::catalog::{ColliderCenterOffset, ColliderHalfSize, ContentCatalog};
 use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Health, Team};
 use crate::game::lawn::{GridCell, LawnLayout};
-use crate::game::model::zombie_model_parts;
+use crate::game::model::{model_bounds, zombie_model_parts};
 use crate::game::physics::zombie_groups;
 use crate::game::plant::Plant;
 use crate::game::schedule::GameSet;
@@ -175,6 +175,7 @@ pub(crate) fn spawn_zombies(
             .map(|assets| assets.chinese_font.clone())
             .unwrap_or_default();
         let model_parts = zombie_model_parts(request.kind, 1.0);
+        let model_bounds = model_bounds(&model_parts);
         // 透明根节点承担碰撞与逻辑，子级色块、名牌和血条自动跟随。
         let mut entity = commands.spawn((
             (
@@ -197,11 +198,13 @@ pub(crate) fn spawn_zombies(
             ),
             (
                 RigidBody::KinematicPositionBased,
-                Collider::cuboid(
-                    definition.collider_half_size.x,
-                    definition.collider_half_size.y,
-                ),
-                ColliderHalfSize(definition.collider_half_size),
+                Collider::compound(vec![(
+                    model_bounds.center,
+                    0.0,
+                    Collider::cuboid(model_bounds.half_size.x, model_bounds.half_size.y),
+                )]),
+                ColliderHalfSize(model_bounds.half_size),
+                ColliderCenterOffset(model_bounds.center),
                 LockedAxes::ROTATION_LOCKED,
                 ActiveEvents::COLLISION_EVENTS,
                 zombie_groups(),

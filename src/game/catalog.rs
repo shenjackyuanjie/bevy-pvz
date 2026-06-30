@@ -212,6 +212,10 @@ pub struct ProjectileDefinition {
 #[derive(Component, Debug, Clone, Copy)]
 pub struct ColliderHalfSize(pub Vec2);
 
+/// 碰撞箱中心相对逻辑实体原点的偏移。
+#[derive(Component, Debug, Clone, Copy)]
+pub struct ColliderCenterOffset(pub Vec2);
+
 /// 内置的、已解析为强类型的内容目录。
 #[derive(Resource, Debug, Clone)]
 pub struct ContentCatalog {

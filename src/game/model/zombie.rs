@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 
-use super::{ModelPart, part};
+use super::{ModelPart, model_bounds, part};
 use crate::game::catalog::ZombieKind;
 
 mod armored;
@@ -31,11 +31,18 @@ impl Default for ZombiePalette {
 pub fn zombie_model_parts(kind: ZombieKind, alpha: f32) -> Vec<ModelPart> {
     let palette = ZombiePalette::default();
     let mut parts = base_zombie_parts(palette, alpha);
+    let base_bounds = model_bounds(&parts);
+    let ground_y = base_bounds.center.y - base_bounds.half_size.y;
     let _ = armored::apply(kind, &mut parts, palette, alpha)
         || mobility::apply(kind, &mut parts, palette, alpha)
         || vehicles::apply(kind, &mut parts, palette, alpha)
         || boss::apply(kind, &mut parts, palette, alpha)
         || plant_like::apply(kind, &mut parts, palette, alpha);
+    let bounds = model_bounds(&parts);
+    let offset_y = ground_y - (bounds.center.y - bounds.half_size.y);
+    for part in &mut parts {
+        part.offset.y += offset_y;
+    }
     parts
 }
 
@@ -309,20 +316,19 @@ mod tests {
     use super::*;
 
     fn visual_bottom(kind: ZombieKind) -> f32 {
-        zombie_model_parts(kind, 1.0)
-            .iter()
-            .map(|part| part.offset.y - part.size.y * 0.5)
-            .min_by(f32::total_cmp)
-            .unwrap()
+        let parts = zombie_model_parts(kind, 1.0);
+        let bounds = model_bounds(&parts);
+        bounds.center.y - bounds.half_size.y
     }
 
     #[test]
-    fn giant_feet_align_with_basic_zombie_feet() {
+    fn every_zombie_model_aligns_with_the_ground() {
         let basic_bottom = visual_bottom(ZombieKind::Basic);
-        let gargantuar_bottom = visual_bottom(ZombieKind::Gargantuar);
-        let giga_bottom = visual_bottom(ZombieKind::GigaGargantuar);
-
-        assert!((gargantuar_bottom - basic_bottom).abs() <= 1.0);
-        assert!((giga_bottom - basic_bottom).abs() <= 1.0);
+        for kind in ZombieKind::ALL {
+            assert!(
+                (visual_bottom(kind) - basic_bottom).abs() <= 0.01,
+                "{kind:?} is not aligned with the ground"
+            );
+        }
     }
 }

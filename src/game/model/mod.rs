@@ -8,6 +8,12 @@ mod zombie;
 pub use plant::plant_model_parts;
 pub use zombie::zombie_model_parts;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ModelBounds {
+    pub center: Vec2,
+    pub half_size: Vec2,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct ModelPart {
     pub color: Color,
@@ -17,6 +23,27 @@ pub struct ModelPart {
     pub z: f32,
     pub name: &'static str,
     pub is_equipment: bool,
+}
+
+pub fn model_bounds(parts: &[ModelPart]) -> ModelBounds {
+    let mut min = Vec2::splat(f32::INFINITY);
+    let mut max = Vec2::splat(f32::NEG_INFINITY);
+
+    for part in parts {
+        let half_size = part.size * 0.5;
+        let (sin, cos) = part.rotation.sin_cos();
+        let rotated_half_size = Vec2::new(
+            cos.abs() * half_size.x + sin.abs() * half_size.y,
+            sin.abs() * half_size.x + cos.abs() * half_size.y,
+        );
+        min = min.min(part.offset - rotated_half_size);
+        max = max.max(part.offset + rotated_half_size);
+    }
+
+    ModelBounds {
+        center: (min + max) * 0.5,
+        half_size: (max - min) * 0.5,
+    }
 }
 
 pub(super) fn part(
