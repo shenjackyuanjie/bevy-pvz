@@ -14,8 +14,9 @@
         (slot: 2, plant: Peashooter),
         (slot: 3, plant: Repeater),
         (slot: 4, plant: GatlingPea),
-        (slot: 5, plant: WallNut),
-        (slot: 6, plant: Torchwood),
+        (slot: 5, plant: SnowPea),
+        (slot: 6, plant: WallNut),
+        (slot: 7, plant: Torchwood),
     ],
     waves: [
         // ========== 第 1 大波：前期热身 ==========

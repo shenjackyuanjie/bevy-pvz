@@ -17,6 +17,7 @@ pub struct UnitVisualDefinition {
 pub enum PlantKind {
     Sunflower,
     Peashooter,
+    SnowPea,
     Repeater,
     GatlingPea,
     WallNut,
@@ -24,9 +25,10 @@ pub enum PlantKind {
 }
 
 impl PlantKind {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Sunflower,
         Self::Peashooter,
+        Self::SnowPea,
         Self::Repeater,
         Self::GatlingPea,
         Self::WallNut,
@@ -272,6 +274,25 @@ impl Default for ContentCatalog {
                         projectile: ProjectileKind::Pea,
                         muzzle_offset: Vec2::new(36.0, 12.0),
                         shots_per_burst: 2,
+                        burst_interval: Duration::from_millis(150),
+                    },
+                },
+                PlantDefinition {
+                    kind: PlantKind::SnowPea,
+                    display_name: "寒冰豌豆",
+                    price: 175,
+                    card_cooldown: Duration::from_secs(5),
+                    health: 120.0,
+                    visual: UnitVisualDefinition {
+                        color: Color::srgb(0.22, 0.70, 0.82),
+                        size: Vec2::new(58.0, 68.0),
+                    },
+                    collider_half_size: Vec2::new(29.0, 34.0),
+                    behavior: PlantBehavior::Shooter {
+                        interval: Duration::from_millis(1350),
+                        projectile: ProjectileKind::IcePea,
+                        muzzle_offset: Vec2::new(36.0, 12.0),
+                        shots_per_burst: 1,
                         burst_interval: Duration::from_millis(150),
                     },
                 },

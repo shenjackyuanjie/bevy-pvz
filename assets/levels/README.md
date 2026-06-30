@@ -20,6 +20,7 @@
     cards: [
         (slot: 1, plant: Sunflower),
         (slot: 2, plant: Peashooter),
+        (slot: 3, plant: SnowPea),
     ],
     waves: [
         (
@@ -53,6 +54,7 @@
 ```ron
 Sunflower
 Peashooter
+SnowPea
 Repeater
 GatlingPea
 WallNut

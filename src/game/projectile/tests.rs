@@ -242,3 +242,108 @@ fn fire_pea_deals_direct_and_small_same_lane_splash_damage() {
     assert!(fire_splash_affects(ZombieKind::Newspaper));
     assert!(fire_splash_affects(ZombieKind::Zomboni));
 }
+
+#[test]
+fn ice_pea_chills_direct_target_unless_barrier_blocks_it() {
+    let mut app = App::new();
+    app.add_message::<ProjectileHit>()
+        .add_message::<ApplyDamage>()
+        .add_systems(Update, resolve_projectile_hits);
+    let projectile = app
+        .world_mut()
+        .spawn((
+            Projectile {
+                owner: Entity::PLACEHOLDER,
+                team: Team::Plants,
+                damage: 20.0,
+            },
+            ProjectileKind::IcePea,
+            HitPolicy {
+                destroy_on_hit: true,
+                remaining_pierces: 0,
+            },
+            HitRegistry::default(),
+        ))
+        .id();
+    let target = app
+        .world_mut()
+        .spawn((
+            Zombie {
+                speed: 1.0,
+                attack_damage: 1.0,
+                engage_min: 0.0,
+                engage_max: 1.0,
+            },
+            ZombieKind::Basic,
+            Transform::default(),
+            Health::new(100.0),
+            Team::Zombies,
+        ))
+        .id();
+
+    app.world_mut()
+        .write_message(ProjectileHit { projectile, target });
+    app.update();
+
+    assert!(app.world().get::<Chilled>(target).is_some());
+    assert!(ice_pea_chills(ZombieKind::Basic, None));
+    assert!(!ice_pea_chills(ZombieKind::ScreenDoor, None));
+
+    let intact_barrier = EquipmentHealth::new(100.0);
+    let mut broken_barrier = EquipmentHealth::new(100.0);
+    broken_barrier.current = 0.0;
+    assert!(!ice_pea_chills(
+        ZombieKind::ScreenDoor,
+        Some(&intact_barrier)
+    ));
+    assert!(ice_pea_chills(
+        ZombieKind::ScreenDoor,
+        Some(&broken_barrier)
+    ));
+}
+
+#[test]
+fn fire_pea_direct_hit_clears_chill() {
+    let mut app = App::new();
+    app.add_message::<ProjectileHit>()
+        .add_message::<ApplyDamage>()
+        .add_systems(Update, resolve_projectile_hits);
+    let projectile = app
+        .world_mut()
+        .spawn((
+            Projectile {
+                owner: Entity::PLACEHOLDER,
+                team: Team::Plants,
+                damage: 40.0,
+            },
+            ProjectileKind::FirePea,
+            HitPolicy {
+                destroy_on_hit: true,
+                remaining_pierces: 0,
+            },
+            HitRegistry::default(),
+        ))
+        .id();
+    let target = app
+        .world_mut()
+        .spawn((
+            Zombie {
+                speed: 1.0,
+                attack_damage: 1.0,
+                engage_min: 0.0,
+                engage_max: 1.0,
+            },
+            ZombieKind::Basic,
+            Transform::default(),
+            Health::new(100.0),
+            Team::Zombies,
+            Chilled::new(),
+        ))
+        .id();
+
+    app.world_mut()
+        .write_message(ProjectileHit { projectile, target });
+    app.update();
+
+    assert!(app.world().get::<Chilled>(target).is_none());
+}

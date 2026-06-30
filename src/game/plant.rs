@@ -138,7 +138,10 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
         let model_facing = if request.cell.is_peashooter_row()
             && matches!(
                 request.kind,
-                PlantKind::Peashooter | PlantKind::Repeater | PlantKind::GatlingPea
+                PlantKind::Peashooter
+                    | PlantKind::SnowPea
+                    | PlantKind::Repeater
+                    | PlantKind::GatlingPea
             ) {
             -1.0
         } else {
@@ -269,9 +272,10 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
 fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
     match kind {
         PlantKind::Sunflower => cell.is_elevated(),
-        PlantKind::Peashooter | PlantKind::Repeater | PlantKind::GatlingPea => {
-            cell.is_peashooter_row()
-        }
+        PlantKind::Peashooter
+        | PlantKind::SnowPea
+        | PlantKind::Repeater
+        | PlantKind::GatlingPea => cell.is_peashooter_row(),
         PlantKind::WallNut => cell.is_ground(),
         PlantKind::Torchwood => cell.is_ground() || cell.is_peashooter_row(),
     }
@@ -446,6 +450,7 @@ mod tests {
         assert!(!plant_can_occupy(PlantKind::Peashooter, ground));
         assert!(!plant_can_occupy(PlantKind::Peashooter, elevated));
         assert!(plant_can_occupy(PlantKind::Peashooter, peashooter_row));
+        assert!(plant_can_occupy(PlantKind::SnowPea, peashooter_row));
         assert!(plant_can_occupy(PlantKind::Repeater, peashooter_row));
         assert!(plant_can_occupy(PlantKind::GatlingPea, peashooter_row));
         assert!(!plant_can_occupy(PlantKind::WallNut, peashooter_row));

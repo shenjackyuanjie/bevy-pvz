@@ -184,7 +184,7 @@ fn setup_hud(
                     position_type: PositionType::Absolute,
                     top: px(12),
                     left: px(16),
-                    width: px(720),
+                    width: px(810),
                     flex_direction: FlexDirection::Column,
                     row_gap: px(theme.panel_gap),
                     ..default()

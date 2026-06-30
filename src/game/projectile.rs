@@ -21,7 +21,7 @@ use bevy_rapier2d::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog, ProjectileMotionDefinition};
-use crate::game::combat::{ApplyDamage, DamageKind, Team};
+use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Team};
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
 use crate::game::lawn::LawnLayout;
@@ -29,7 +29,7 @@ use crate::game::physics::physics_projectile_groups;
 use crate::game::plant::{TorchwoodFlameCollider, TorchwoodFlameZone};
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
-use crate::game::zombie::{Zombie, ZombieKind};
+use crate::game::zombie::{Chilled, Zombie, ZombieKind};
 
 pub use crate::game::catalog::ProjectileKind;
 
@@ -137,6 +137,19 @@ struct ProjectileRadius(f32);
 #[derive(Component)]
 struct ProjectileFill;
 
+#[derive(Component)]
+struct ProjectileAdornment;
+
+#[derive(Clone, Copy)]
+struct ProjectileAdornmentPart {
+    name: &'static str,
+    color: Color,
+    size: Vec2,
+    offset: Vec2,
+    rotation: f32,
+    z: f32,
+}
+
 #[derive(Clone)]
 struct ProjectileRenderAssetSet {
     border_mesh: Handle<Mesh>,
@@ -229,6 +242,7 @@ struct IgnitionParams<'w, 's> {
     render_assets: ResMut<'w, ProjectileRenderAssets>,
     projectiles: Query<'w, 's, IgnitableProjectileItem<'static>>,
     fills: Query<'w, 's, ProjectileFillItem<'static>, ProjectileFillFilter>,
+    adornments: Query<'w, 's, (), With<ProjectileAdornment>>,
 }
 
 /// 消费 [`SpawnProjectile`] 消息，创建对应的弹丸实体。
@@ -329,6 +343,91 @@ fn spawn_projectiles(
             ProjectileFill,
             Name::new("Projectile fill"),
         ));
+        projectile.with_children(|parent| {
+            spawn_projectile_adornments(parent, request.kind);
+        });
+    }
+}
+
+fn spawn_projectile_adornments(parent: &mut ChildSpawnerCommands, kind: ProjectileKind) {
+    for part in projectile_adornment_parts(kind) {
+        parent.spawn((
+            Sprite::from_color(part.color, part.size),
+            Transform::from_xyz(part.offset.x, part.offset.y, part.z)
+                .with_rotation(Quat::from_rotation_z(part.rotation)),
+            ProjectileAdornment,
+            Name::new(part.name),
+        ));
+    }
+}
+
+fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPart> {
+    let shine = ProjectileAdornmentPart {
+        name: "豌豆高光",
+        color: Color::srgba(1.0, 1.0, 0.82, 0.76),
+        size: Vec2::new(6.0, 3.0),
+        offset: Vec2::new(-3.0, 4.0),
+        rotation: -0.35,
+        z: 0.2,
+    };
+    match kind {
+        ProjectileKind::Pea => vec![
+            ProjectileAdornmentPart {
+                name: "豌豆下缘阴影",
+                color: Color::srgba(0.04, 0.28, 0.04, 0.50),
+                size: Vec2::new(11.0, 3.0),
+                offset: Vec2::new(1.0, -4.0),
+                rotation: 0.0,
+                z: 0.18,
+            },
+            shine,
+        ],
+        ProjectileKind::IcePea | ProjectileKind::PhysicsPea => vec![
+            ProjectileAdornmentPart {
+                name: "冰豌豆内核",
+                color: Color::srgba(0.78, 0.98, 1.0, 0.82),
+                size: Vec2::new(10.0, 5.0),
+                offset: Vec2::new(0.0, 0.0),
+                rotation: 0.0,
+                z: 0.18,
+            },
+            ProjectileAdornmentPart {
+                name: "冰晶横刺",
+                color: Color::srgba(0.88, 1.0, 1.0, 0.88),
+                size: Vec2::new(17.0, 2.0),
+                offset: Vec2::new(0.0, 0.0),
+                rotation: 0.18,
+                z: 0.22,
+            },
+            ProjectileAdornmentPart {
+                name: "冰晶竖刺",
+                color: Color::srgba(0.72, 0.92, 1.0, 0.82),
+                size: Vec2::new(2.0, 16.0),
+                offset: Vec2::new(0.0, 0.0),
+                rotation: -0.18,
+                z: 0.23,
+            },
+            shine,
+        ],
+        ProjectileKind::FirePea => vec![
+            ProjectileAdornmentPart {
+                name: "火豌豆尾焰",
+                color: Color::srgba(1.0, 0.16, 0.03, 0.62),
+                size: Vec2::new(18.0, 8.0),
+                offset: Vec2::new(-11.0, 0.0),
+                rotation: 0.0,
+                z: 0.16,
+            },
+            ProjectileAdornmentPart {
+                name: "火豌豆内焰",
+                color: Color::srgba(1.0, 0.86, 0.08, 0.80),
+                size: Vec2::new(9.0, 4.0),
+                offset: Vec2::new(-7.0, 0.0),
+                rotation: 0.0,
+                z: 0.22,
+            },
+            shine,
+        ],
     }
 }
 
@@ -480,8 +579,9 @@ fn collect_physics_torchwood_collisions(
     }
 }
 
-/// 统一将点燃的豌豆切换为火焰伤害和红色系材质，保留原运动管线。
+/// 统一处理火炬树桩转换，保留原运动管线。
 fn apply_projectile_ignitions(
+    mut commands: Commands,
     mut ignitions: MessageReader<IgniteProjectile>,
     mut params: IgnitionParams,
     mut converted: Local<HashSet<Entity>>,
@@ -516,8 +616,13 @@ fn apply_projectile_ignitions(
             if let Ok((mut fill_mesh, mut fill_material)) = params.fills.get_mut(child) {
                 *fill_mesh = Mesh2d(render.fill_mesh.clone());
                 *fill_material = MeshMaterial2d(render.fill_material.clone());
+            } else if params.adornments.contains(child) {
+                commands.entity(child).despawn();
             }
         }
+        commands.entity(request.0).with_children(|parent| {
+            spawn_projectile_adornments(parent, output_kind);
+        });
     }
 }
 
@@ -605,7 +710,7 @@ fn resolve_projectile_hits(
     mut commands: Commands,
     mut hits: MessageReader<ProjectileHit>,
     mut projectiles: Query<ResolvedProjectileItem<'_>>,
-    zombies: Query<(Entity, &Transform, &ZombieKind), With<Zombie>>,
+    zombies: Query<(Entity, &Transform, &ZombieKind, Option<&EquipmentHealth>), With<Zombie>>,
     mut damage: MessageWriter<ApplyDamage>,
     mut consumed: Local<HashSet<Entity>>,
 ) {
@@ -631,12 +736,21 @@ fn resolve_projectile_hits(
             amount: projectile.damage,
             kind: DamageKind::Projectile,
         });
+        if *projectile_kind == ProjectileKind::IcePea
+            && let Ok((_, _, target_kind, equipment)) = zombies.get(hit.target)
+            && ice_pea_chills(*target_kind, equipment)
+        {
+            commands.entity(hit.target).insert(Chilled::new());
+        }
+        if *projectile_kind == ProjectileKind::FirePea {
+            commands.entity(hit.target).remove::<Chilled>();
+        }
         if *projectile_kind == ProjectileKind::FirePea
-            && let Ok((_, impact_transform, primary_kind)) = zombies.get(hit.target)
+            && let Ok((_, impact_transform, primary_kind, _)) = zombies.get(hit.target)
             && fire_splash_triggers(*primary_kind)
         {
             let impact = impact_transform.translation.truncate();
-            for (nearby, nearby_transform, nearby_kind) in &zombies {
+            for (nearby, nearby_transform, nearby_kind, _) in &zombies {
                 if nearby == hit.target || !fire_splash_affects(*nearby_kind) {
                     continue;
                 }
@@ -669,6 +783,15 @@ fn fire_splash_triggers(kind: ZombieKind) -> bool {
 
 fn fire_splash_affects(kind: ZombieKind) -> bool {
     !matches!(kind, ZombieKind::ScreenDoor | ZombieKind::Ladder)
+}
+
+fn ice_pea_chills(kind: ZombieKind, equipment: Option<&EquipmentHealth>) -> bool {
+    match kind {
+        ZombieKind::ScreenDoor | ZombieKind::Ladder => {
+            equipment.is_some_and(EquipmentHealth::is_broken)
+        }
+        _ => true,
+    }
 }
 
 /// 普通路径豌豆完全飞出当前窗口后销毁；物理豌豆不参与此清理。

@@ -103,11 +103,39 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
                 ),
             ]);
         }
-        PlantKind::Peashooter | PlantKind::Repeater | PlantKind::GatlingPea => {
-            let (head_color, barrel_count) = match kind {
-                PlantKind::Peashooter => (Color::srgb(0.16, 0.72, 0.20), 1),
-                PlantKind::Repeater => (Color::srgb(0.08, 0.58, 0.16), 2),
-                PlantKind::GatlingPea => (Color::srgb(0.05, 0.42, 0.12), 4),
+        PlantKind::Peashooter
+        | PlantKind::SnowPea
+        | PlantKind::Repeater
+        | PlantKind::GatlingPea => {
+            let (head_color, barrel_color, rim_color, highlight_color, barrel_count) = match kind {
+                PlantKind::Peashooter => (
+                    Color::srgb(0.16, 0.72, 0.20),
+                    Color::srgb(0.14, 0.64, 0.17),
+                    dark_green,
+                    Color::srgb(0.42, 0.88, 0.35),
+                    1,
+                ),
+                PlantKind::SnowPea => (
+                    Color::srgb(0.24, 0.74, 0.86),
+                    Color::srgb(0.20, 0.62, 0.78),
+                    Color::srgb(0.05, 0.28, 0.38),
+                    Color::srgb(0.72, 0.96, 1.0),
+                    1,
+                ),
+                PlantKind::Repeater => (
+                    Color::srgb(0.08, 0.58, 0.16),
+                    Color::srgb(0.07, 0.50, 0.13),
+                    dark_green,
+                    Color::srgb(0.38, 0.82, 0.30),
+                    2,
+                ),
+                PlantKind::GatlingPea => (
+                    Color::srgb(0.05, 0.42, 0.12),
+                    Color::srgb(0.04, 0.34, 0.09),
+                    Color::srgb(0.02, 0.18, 0.05),
+                    Color::srgb(0.26, 0.62, 0.23),
+                    4,
+                ),
                 _ => unreachable!(),
             };
             parts.push(part(
@@ -141,7 +169,7 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
             for offset in barrel_offsets {
                 parts.push(part(
                     "豌豆炮管",
-                    head_color,
+                    barrel_color,
                     Vec2::new(23.0, 11.0),
                     *offset,
                     0.0,
@@ -150,7 +178,7 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
                 ));
                 parts.push(part(
                     "豌豆炮口",
-                    dark_green,
+                    rim_color,
                     Vec2::new(5.0, 8.0),
                     *offset + Vec2::new(10.0, 0.0),
                     0.0,
@@ -178,13 +206,57 @@ pub fn plant_model_parts(kind: PlantKind, alpha: f32) -> Vec<ModelPart> {
             ));
             parts.push(part(
                 "豌豆头部高光",
-                Color::srgb(0.42, 0.88, 0.35),
+                highlight_color,
                 Vec2::new(9.0, 4.0),
                 Vec2::new(-10.0, 24.0),
                 -0.2,
                 0.4,
                 alpha * 0.72,
             ));
+            if kind == PlantKind::SnowPea {
+                parts.extend([
+                    part(
+                        "寒冰豌豆冰冠",
+                        Color::srgb(0.82, 0.98, 1.0),
+                        Vec2::new(15.0, 5.0),
+                        Vec2::new(-6.0, 31.0),
+                        -0.28,
+                        0.45,
+                        alpha * 0.88,
+                    ),
+                    part(
+                        "寒冰豌豆冰刺",
+                        Color::srgb(0.64, 0.90, 1.0),
+                        Vec2::new(5.0, 13.0),
+                        Vec2::new(7.0, 30.0),
+                        0.55,
+                        0.45,
+                        alpha * 0.82,
+                    ),
+                ]);
+            }
+            if kind == PlantKind::Repeater || kind == PlantKind::GatlingPea {
+                parts.push(part(
+                    "豌豆加固颈叶",
+                    dark_green,
+                    Vec2::new(24.0, 7.0),
+                    Vec2::new(-4.0, 0.0),
+                    0.08,
+                    0.18,
+                    alpha * 0.82,
+                ));
+            }
+            if kind == PlantKind::GatlingPea {
+                parts.push(part(
+                    "机枪豌豆炮箍",
+                    Color::srgb(0.03, 0.22, 0.06),
+                    Vec2::new(15.0, 32.0),
+                    Vec2::new(18.0, 14.0),
+                    0.0,
+                    0.38,
+                    alpha * 0.92,
+                ));
+            }
         }
         PlantKind::WallNut => {
             parts.clear();

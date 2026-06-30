@@ -12,6 +12,7 @@
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+use std::time::Duration;
 
 use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog};
@@ -25,6 +26,9 @@ use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
 
 pub use crate::game::catalog::ZombieKind;
+
+const CHILL_DURATION: Duration = Duration::from_secs(10);
+const CHILL_TIME_SCALE: f32 = 0.5;
 
 /// 僵尸插件，注册生成、状态更新、行走和攻击系统。
 pub struct ZombiePlugin;
@@ -47,6 +51,7 @@ impl Plugin for ZombiePlugin {
                 FixedUpdate,
                 (
                     update_zombie_state,
+                    tick_chilled_zombies,
                     advance_walking_zombies,
                     tick_zombie_attacks,
                 )
@@ -65,6 +70,20 @@ pub struct Zombie {
     pub attack_damage: f32,
     pub engage_min: f32,
     pub engage_max: f32,
+}
+
+/// 冰豌豆施加的减速状态。
+#[derive(Component, Debug)]
+pub struct Chilled {
+    timer: Timer,
+}
+
+impl Chilled {
+    pub fn new() -> Self {
+        Self {
+            timer: Timer::new(CHILL_DURATION, TimerMode::Once),
+        }
+    }
 }
 
 /// 僵尸行为状态枚举。
@@ -352,14 +371,36 @@ fn update_zombie_state(
 }
 
 /// 处于 Walking 状态的僵尸向左移动。
+fn tick_chilled_zombies(
+    time: Res<Time<Fixed>>,
+    mut commands: Commands,
+    mut zombies: Query<(Entity, &mut Chilled)>,
+) {
+    for (entity, mut chilled) in &mut zombies {
+        chilled.timer.tick(time.delta());
+        if chilled.timer.is_finished() {
+            commands.entity(entity).remove::<Chilled>();
+        }
+    }
+}
+
 fn advance_walking_zombies(
     time: Res<Time<Fixed>>,
-    mut zombies: Query<(&Zombie, &ZombieState, &mut Transform)>,
+    mut zombies: Query<(&Zombie, &ZombieState, &mut Transform, Option<&Chilled>)>,
 ) {
-    for (zombie, state, mut transform) in &mut zombies {
+    for (zombie, state, mut transform, chilled) in &mut zombies {
         if *state == ZombieState::Walking {
-            transform.translation.x -= zombie.speed * time.delta_secs();
+            transform.translation.x -=
+                effective_zombie_speed(zombie.speed, chilled.is_some()) * time.delta_secs();
         }
+    }
+}
+
+fn effective_zombie_speed(base_speed: f32, chilled: bool) -> f32 {
+    if chilled {
+        base_speed * CHILL_TIME_SCALE
+    } else {
+        base_speed
     }
 }
 
@@ -368,11 +409,17 @@ fn advance_walking_zombies(
 /// 如果目标植物已被销毁，则重置计时器并等待下次状态更新。
 fn tick_zombie_attacks(
     time: Res<Time<Fixed>>,
-    mut zombies: Query<(Entity, &Zombie, &ZombieState, &mut AttackTimer)>,
+    mut zombies: Query<(
+        Entity,
+        &Zombie,
+        &ZombieState,
+        &mut AttackTimer,
+        Option<&Chilled>,
+    )>,
     plants: Query<(), With<Plant>>,
     mut damage: MessageWriter<ApplyDamage>,
 ) {
-    for (entity, zombie, state, mut timer) in &mut zombies {
+    for (entity, zombie, state, mut timer, chilled) in &mut zombies {
         let ZombieState::Eating { target } = *state else {
             timer.0.reset();
             continue;
@@ -380,7 +427,12 @@ fn tick_zombie_attacks(
         if !plants.contains(target) {
             continue;
         }
-        timer.0.tick(time.delta());
+        let delta = if chilled.is_some() {
+            time.delta().mul_f32(CHILL_TIME_SCALE)
+        } else {
+            time.delta()
+        };
+        timer.0.tick(delta);
         if timer.0.just_finished() {
             damage.write(ApplyDamage {
                 source: entity,
