@@ -15,7 +15,7 @@ use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog, PlantBehavior};
 use crate::game::combat::{Dead, Health, Team};
 use crate::game::lawn::{CellOccupancy, GridCell, LawnLayout};
-use crate::game::level::{PlantCards, SpawnSun, SunBank};
+use crate::game::level::{LevelDefinition, PlantCards, SpawnSun, SunBank};
 use crate::game::model::plant_model_parts;
 use crate::game::physics::{plant_groups, torchwood_groups};
 use crate::game::projectile::{ProjectileKind, ProjectileRoute, SpawnProjectile};
@@ -308,6 +308,7 @@ fn update_plant_debug_visibility(
 /// 只有当射手的 `ActionTimer` 归零（射击间隔结束）且前方存在僵尸时才会发射。
 fn fire_ready_shooters(
     time: Res<Time<Fixed>>,
+    definition: Res<LevelDefinition>,
     layout: Res<LawnLayout>,
     mut shooters: Query<(
         Entity,
@@ -342,12 +343,12 @@ fn fire_ready_shooters(
         }
         let target_origin_x = match route {
             ProjectileRoute::Direct => origin.x,
-            ProjectileRoute::LeftEdgePortal { exit, .. } => exit.x,
+            ProjectileRoute::LeftEdgePath { turn_x, .. } => turn_x,
         };
         let has_target = zombies
             .iter()
             .any(|zombie_transform| zombie_transform.translation.x > target_origin_x);
-        if has_target && timer.0.just_finished() {
+        if shooter_should_fire(definition.always_shoot, has_target) && timer.0.just_finished() {
             spawn.write(SpawnProjectile {
                 owner: entity,
                 origin,
@@ -360,7 +361,11 @@ fn fire_ready_shooters(
     }
 }
 
-/// 底排弹丸从自身炮口向左发射，到边界后从 row 0 左端向右继续飞行。
+fn shooter_should_fire(always_shoot: bool, has_target: bool) -> bool {
+    always_shoot || has_target
+}
+
+/// 底排弹丸从自身炮口向左发射，再沿左边界上行到 row 0 后向右飞行。
 fn shooter_projectile_route(
     layout: &LawnLayout,
     cell: GridCell,
@@ -370,9 +375,9 @@ fn shooter_projectile_route(
     if cell.is_peashooter_row() {
         (
             plant_position + Vec2::new(-muzzle_offset.x, muzzle_offset.y),
-            ProjectileRoute::LeftEdgePortal {
-                trigger_x: layout.origin.x,
-                exit: Vec2::new(layout.origin.x, layout.path_y() + muzzle_offset.y),
+            ProjectileRoute::LeftEdgePath {
+                turn_x: layout.origin.x,
+                target_y: layout.path_y() + muzzle_offset.y,
             },
         )
     } else {
@@ -451,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn lower_row_projectiles_start_locally_and_carry_a_portal_route() {
+    fn lower_row_projectiles_start_locally_and_carry_a_left_edge_path() {
         let layout = LawnLayout::default();
         let muzzle = Vec2::new(36.0, 12.0);
         let lower = GridCell { column: 7, row: -2 };
@@ -461,10 +466,17 @@ mod tests {
         assert_eq!(origin, plant_position + Vec2::new(-muzzle.x, muzzle.y));
         assert_eq!(
             route,
-            ProjectileRoute::LeftEdgePortal {
-                trigger_x: layout.origin.x,
-                exit: Vec2::new(layout.origin.x, layout.path_y() + muzzle.y),
+            ProjectileRoute::LeftEdgePath {
+                turn_x: layout.origin.x,
+                target_y: layout.path_y() + muzzle.y,
             }
         );
+    }
+
+    #[test]
+    fn always_shoot_level_option_bypasses_target_requirement() {
+        assert!(shooter_should_fire(true, false));
+        assert!(shooter_should_fire(false, true));
+        assert!(!shooter_should_fire(false, false));
     }
 }

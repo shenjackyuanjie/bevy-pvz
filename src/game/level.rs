@@ -131,6 +131,8 @@ pub struct ZombieSpawnDefinition {
 /// 单个波次的全部僵尸生成点。RON 中每个 `waves` 数组项对应一个显式 `wave`。
 #[derive(Debug, Clone)]
 pub struct ZombieWaveDefinition {
+    /// 本波开始时间（秒），包含上一波结束后的等待时间。
+    pub start_seconds: f32,
     pub spawns: Vec<ZombieSpawnDefinition>,
 }
 
@@ -140,6 +142,7 @@ pub struct LevelDefinition {
     pub id: LevelId,
     pub display_name: String,
     pub starting_sun: u32,
+    pub always_shoot: bool,
     pub lawn: LawnLayout,
     pub cards: Vec<PlantCardDefinition>,
     /// 保留波次边界的僵尸生成计划。
@@ -152,6 +155,8 @@ struct LevelConfig {
     id: String,
     display_name: String,
     starting_sun: u32,
+    #[serde(default)]
+    always_shoot: bool,
     lawn: LawnConfig,
     cards: Vec<PlantCardConfig>,
     waves: Vec<WaveConfig>,
@@ -234,6 +239,7 @@ impl LevelDefinition {
             id: LevelId(config.id),
             display_name: config.display_name,
             starting_sun: config.starting_sun,
+            always_shoot: config.always_shoot,
             lawn,
             cards,
             waves,
@@ -364,7 +370,10 @@ fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieWaveDefinition>, Str
             .last()
             .map(|spawn| spawn.at_seconds)
             .unwrap_or(wave_start);
-        definitions.push(ZombieWaveDefinition { spawns });
+        definitions.push(ZombieWaveDefinition {
+            start_seconds: wave_start,
+            spawns,
+        });
     }
     Ok(definitions)
 }

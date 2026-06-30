@@ -10,6 +10,7 @@
     id: "level_01",
     display_name: "前院防线",
     starting_sun: 250,
+    always_shoot: true,
     lawn: (
         columns: 9,
         cell_size: (90.0, 90.0),
@@ -37,6 +38,7 @@
 - `id`: 关卡 ID，不能为空。
 - `display_name`: 显示名称，不能为空。
 - `starting_sun`: 开局太阳数。
+- `always_shoot`: 是否让射手植物无论前方是否有僵尸都持续射击。省略时默认为 `false`。
 - `lawn.columns`: 底层草坪列数。
 - `lawn.cell_size`: 单格宽高，单位是世界像素。
 - `lawn.center_x`: 草坪整体中心 X。

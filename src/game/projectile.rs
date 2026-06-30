@@ -115,11 +115,19 @@ struct PathVelocity(Vec2);
 #[derive(Component, Debug)]
 struct PreviousPosition(Vec2);
 
-/// 底排豌豆到达左边界后的传送参数。
+/// 底排豌豆沿左边界折返到道路的路线状态。
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
-struct LeftEdgePortal {
-    trigger_x: f32,
-    exit: Vec2,
+struct LeftEdgePath {
+    turn_x: f32,
+    target_y: f32,
+    phase: LeftEdgePathPhase,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum LeftEdgePathPhase {
+    MoveLeft,
+    MoveUp,
+    MoveRight,
 }
 
 /// 弹丸逻辑和物理碰撞共用的半径。
@@ -167,14 +175,14 @@ pub struct SpawnProjectile {
     pub origin: Vec2,
     /// 弹丸种类。
     pub kind: ProjectileKind,
-    /// 弹道路线；底排豌豆使用左边界传送，调试弹丸使用直行。
+    /// 弹道路线；底排豌豆使用左边界折线路径，调试弹丸使用直行。
     pub route: ProjectileRoute,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProjectileRoute {
     Direct,
-    LeftEdgePortal { trigger_x: f32, exit: Vec2 },
+    LeftEdgePath { turn_x: f32, target_y: f32 },
 }
 
 /// 弹丸命中事件消息，由碰撞检测系统发出，[`resolve_projectile_hits`] 消费。
@@ -266,7 +274,7 @@ fn spawn_projectiles(
             ProjectileMotionDefinition::Path { velocity } => {
                 let velocity = match request.route {
                     ProjectileRoute::Direct => velocity,
-                    ProjectileRoute::LeftEdgePortal { .. } => {
+                    ProjectileRoute::LeftEdgePath { .. } => {
                         Vec2::new(-velocity.x.abs(), velocity.y)
                     }
                 };
@@ -306,9 +314,13 @@ fn spawn_projectiles(
             )),
         };
         if matches!(definition.motion, ProjectileMotionDefinition::Path { .. })
-            && let ProjectileRoute::LeftEdgePortal { trigger_x, exit } = request.route
+            && let ProjectileRoute::LeftEdgePath { turn_x, target_y } = request.route
         {
-            projectile.insert(LeftEdgePortal { trigger_x, exit });
+            projectile.insert(LeftEdgePath {
+                turn_x,
+                target_y,
+                phase: LeftEdgePathPhase::MoveLeft,
+            });
         }
         projectile.with_child((
             Mesh2d(render.fill_mesh),
@@ -344,7 +356,7 @@ fn projectile_render_assets(
         .clone()
 }
 
-/// 路径弹丸运动：底排弹丸向左越过边界后传送到 row 0 并改为向右。
+/// 路径弹丸运动：底排弹丸先向左到边界，再向上到 row 0，最后向右飞行。
 fn advance_path_projectiles(
     time: Res<Time<Fixed>>,
     mut projectiles: Query<
@@ -352,15 +364,19 @@ fn advance_path_projectiles(
             &mut Transform,
             &mut PathVelocity,
             &mut PreviousPosition,
-            Option<&LeftEdgePortal>,
+            Option<&mut LeftEdgePath>,
         ),
         With<Projectile>,
     >,
 ) {
-    for (mut transform, mut velocity, mut previous, portal) in &mut projectiles {
+    for (mut transform, mut velocity, mut previous, route) in &mut projectiles {
         let start = transform.translation.truncate();
-        let (next, previous_position) =
-            advance_path_step(start, &mut velocity.0, time.delta_secs(), portal.copied());
+        let (next, previous_position) = advance_path_step(
+            start,
+            &mut velocity.0,
+            time.delta_secs(),
+            route.map(|route| route.into_inner()),
+        );
         transform.translation = next.extend(transform.translation.z);
         previous.0 = previous_position;
     }
@@ -370,17 +386,40 @@ fn advance_path_step(
     start: Vec2,
     velocity: &mut Vec2,
     delta_seconds: f32,
-    portal: Option<LeftEdgePortal>,
+    route: Option<&mut LeftEdgePath>,
 ) -> (Vec2, Vec2) {
-    let next = start + *velocity * delta_seconds;
-    if let Some(portal) = portal
-        && velocity.x < 0.0
-        && next.x <= portal.trigger_x
-    {
-        velocity.x = velocity.x.abs();
-        (portal.exit, portal.exit)
+    let speed = velocity.length();
+    if let Some(route) = route {
+        match route.phase {
+            LeftEdgePathPhase::MoveLeft => {
+                *velocity = Vec2::new(-speed, 0.0);
+                let next = start + *velocity * delta_seconds;
+                if next.x <= route.turn_x {
+                    route.phase = LeftEdgePathPhase::MoveUp;
+                    *velocity = Vec2::new(0.0, speed);
+                    (Vec2::new(route.turn_x, start.y), start)
+                } else {
+                    (next, start)
+                }
+            }
+            LeftEdgePathPhase::MoveUp => {
+                *velocity = Vec2::new(0.0, speed);
+                let next = start + *velocity * delta_seconds;
+                if next.y >= route.target_y {
+                    route.phase = LeftEdgePathPhase::MoveRight;
+                    *velocity = Vec2::new(speed, 0.0);
+                    (Vec2::new(route.turn_x, route.target_y), start)
+                } else {
+                    (next, start)
+                }
+            }
+            LeftEdgePathPhase::MoveRight => {
+                *velocity = Vec2::new(speed, 0.0);
+                (start + *velocity * delta_seconds, start)
+            }
+        }
     } else {
-        (next, start)
+        (start + *velocity * delta_seconds, start)
     }
 }
 

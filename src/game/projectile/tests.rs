@@ -29,17 +29,36 @@ fn swept_query_rejects_vertical_miss() {
 }
 
 #[test]
-fn left_route_teleports_without_sweeping_between_rows_and_reverses() {
-    let portal = LeftEdgePortal {
-        trigger_x: -100.0,
-        exit: Vec2::new(-100.0, 40.0),
+fn left_route_moves_to_left_edge_then_up_then_right() {
+    let mut route = LeftEdgePath {
+        turn_x: -100.0,
+        target_y: 40.0,
+        phase: LeftEdgePathPhase::MoveLeft,
     };
     let mut velocity = Vec2::new(-430.0, 0.0);
-    let (position, previous) =
-        advance_path_step(Vec2::new(-95.0, -140.0), &mut velocity, 0.1, Some(portal));
+    let (position, previous) = advance_path_step(
+        Vec2::new(-95.0, -140.0),
+        &mut velocity,
+        0.1,
+        Some(&mut route),
+    );
 
-    assert_eq!(position, portal.exit);
-    assert_eq!(previous, portal.exit);
+    assert_eq!(position, Vec2::new(-100.0, -140.0));
+    assert_eq!(previous, Vec2::new(-95.0, -140.0));
+    assert_eq!(velocity, Vec2::new(0.0, 430.0));
+    assert_eq!(route.phase, LeftEdgePathPhase::MoveUp);
+
+    let (position, previous) = advance_path_step(position, &mut velocity, 0.5, Some(&mut route));
+
+    assert_eq!(position, Vec2::new(-100.0, 40.0));
+    assert_eq!(previous, Vec2::new(-100.0, -140.0));
+    assert_eq!(velocity, Vec2::new(430.0, 0.0));
+    assert_eq!(route.phase, LeftEdgePathPhase::MoveRight);
+
+    let (position, previous) = advance_path_step(position, &mut velocity, 0.1, Some(&mut route));
+
+    assert_eq!(position, Vec2::new(-57.0, 40.0));
+    assert_eq!(previous, Vec2::new(-100.0, 40.0));
     assert_eq!(velocity, Vec2::new(430.0, 0.0));
 }
 

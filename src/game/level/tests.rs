@@ -36,6 +36,7 @@ fn final_wave_is_spawned_before_outcome_check() {
         .insert_resource(LevelRuntime::default())
         .insert_resource(LevelDefinition {
             waves: vec![ZombieWaveDefinition {
+                start_seconds: 0.0,
                 spawns: vec![ZombieSpawnDefinition {
                     at_seconds: 0.0,
                     kind: ZombieKind::Basic,
@@ -112,6 +113,7 @@ fn ron_wave_entries_are_relative_to_their_wave_start() {
     )
     .unwrap();
 
+    assert!(!level.always_shoot);
     let first_wave_times: Vec<f32> = level.waves[0]
         .spawns
         .iter()
@@ -130,7 +132,43 @@ fn ron_wave_entries_are_relative_to_their_wave_start() {
             .iter()
             .any(|spawn| spawn.at_seconds == 6.0 && spawn.kind == ZombieKind::Conehead)
     );
+    assert_eq!(level.waves[0].start_seconds, 5.0);
+    assert_eq!(level.waves[1].start_seconds, 13.0);
     assert_eq!(level.waves[1].spawns[0].at_seconds, 15.0);
+}
+
+#[test]
+fn ron_level_reads_always_shoot_option() {
+    let level = LevelDefinition::from_ron_str(
+        r#"
+        (
+            id: "test_always_shoot",
+            display_name: "持续射击",
+            starting_sun: 50,
+            always_shoot: true,
+            lawn: (
+                columns: 9,
+                cell_size: (90.0, 90.0),
+                center_x: -50.0,
+                path_y: -125.0,
+            ),
+            cards: [
+                (slot: 1, plant: Peashooter),
+            ],
+            waves: [
+                (
+                    delay: 1.0,
+                    wave: [
+                        (delay: 0.0, kind: Basic, count: 1, interval: 1.0),
+                    ],
+                ),
+            ],
+        )
+        "#,
+    )
+    .unwrap();
+
+    assert!(level.always_shoot);
 }
 
 #[test]

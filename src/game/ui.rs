@@ -65,6 +65,18 @@ struct ZombieProgressText;
 #[derive(Component)]
 struct ZombieProgressFill;
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum WaveProgressMarkerKind {
+    WaveStart,
+    Spawn,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct WaveProgressMarker {
+    seconds: f32,
+    kind: WaveProgressMarkerKind,
+}
+
 #[derive(Component)]
 /// 标记植物卡片背景，并保存该卡片对应的植物类型。
 struct PlantCardPanel(PlantKind);
@@ -227,16 +239,51 @@ fn setup_hud(
                             BorderColor::all(Color::srgba(0.78, 0.64, 0.32, 0.75)),
                             Name::new("僵尸进度条"),
                         ))
-                        .with_child((
-                            Node {
-                                width: percent(0),
-                                height: percent(100),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.62, 0.12, 0.08)),
-                            ZombieProgressFill,
-                            Name::new("僵尸进度填充"),
-                        ));
+                        .with_children(|bar| {
+                            bar.spawn((
+                                Node {
+                                    width: percent(0),
+                                    height: percent(100),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.62, 0.12, 0.08)),
+                                ZombieProgressFill,
+                                Name::new("僵尸进度填充"),
+                            ));
+
+                            let total_seconds = wave_timeline_total_seconds(&definition);
+                            for marker in wave_progress_markers(&definition) {
+                                let left = progress_percent(marker.seconds, total_seconds);
+                                let (width, top, bottom, color, name) = match marker.kind {
+                                    WaveProgressMarkerKind::WaveStart => (
+                                        2.0,
+                                        0.0,
+                                        0.0,
+                                        Color::srgba(1.0, 0.82, 0.25, 0.92),
+                                        "波次起点线",
+                                    ),
+                                    WaveProgressMarkerKind::Spawn => (
+                                        1.0,
+                                        2.0,
+                                        2.0,
+                                        Color::srgba(1.0, 0.93, 0.68, 0.42),
+                                        "刷怪间隔线",
+                                    ),
+                                };
+                                bar.spawn((
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: percent(left),
+                                        top: px(top),
+                                        bottom: px(bottom),
+                                        width: px(width),
+                                        ..default()
+                                    },
+                                    BackgroundColor(color),
+                                    Name::new(name),
+                                ));
+                            }
+                        });
                 });
 
                 left.spawn((
@@ -680,13 +727,64 @@ fn update_zombie_progress(
     let total: usize = definition.waves.iter().map(|wave| wave.spawns.len()).sum();
     let defeated = runtime.defeated_zombies;
     let remaining = total.saturating_sub(defeated);
-    let completed_ratio = if total == 0 {
-        1.0
-    } else {
-        defeated.min(total) as f32 / total as f32
-    };
-    fill.width = percent(completed_ratio * 100.0);
-    label.0 = format!("僵尸进度  剩余 {remaining} / {total}");
+    let total_seconds = wave_timeline_total_seconds(&definition);
+    let timeline_percent = progress_percent(runtime.elapsed.as_secs_f32(), total_seconds);
+    fill.width = percent(timeline_percent);
+    label.0 = format!("波次进度  剩余 {remaining} / {total}");
+}
+
+fn wave_timeline_total_seconds(definition: &LevelDefinition) -> f32 {
+    definition
+        .waves
+        .iter()
+        .filter_map(|wave| wave.spawns.last())
+        .map(|spawn| spawn.at_seconds)
+        .max_by(f32::total_cmp)
+        .unwrap_or(0.0)
+}
+
+fn progress_percent(seconds: f32, total_seconds: f32) -> f32 {
+    if total_seconds <= 0.0 {
+        return 100.0;
+    }
+    (seconds / total_seconds * 100.0).clamp(0.0, 100.0)
+}
+
+fn wave_progress_markers(definition: &LevelDefinition) -> Vec<WaveProgressMarker> {
+    let total_seconds = wave_timeline_total_seconds(definition);
+    if total_seconds <= 0.0 {
+        return Vec::new();
+    }
+
+    let mut markers = Vec::new();
+    for wave in &definition.waves {
+        markers.push(WaveProgressMarker {
+            seconds: wave.start_seconds,
+            kind: WaveProgressMarkerKind::WaveStart,
+        });
+        for spawn in &wave.spawns {
+            markers.push(WaveProgressMarker {
+                seconds: spawn.at_seconds,
+                kind: WaveProgressMarkerKind::Spawn,
+            });
+        }
+    }
+    markers.sort_by(|a, b| {
+        a.seconds
+            .total_cmp(&b.seconds)
+            .then_with(|| marker_priority(a.kind).cmp(&marker_priority(b.kind)))
+    });
+    markers.dedup_by(|next, current| {
+        next.kind == current.kind && (next.seconds - current.seconds).abs() <= f32::EPSILON
+    });
+    markers
+}
+
+fn marker_priority(kind: WaveProgressMarkerKind) -> u8 {
+    match kind {
+        WaveProgressMarkerKind::WaveStart => 0,
+        WaveProgressMarkerKind::Spawn => 1,
+    }
 }
 
 fn control_help(controls: &ControlBindings) -> String {
@@ -708,5 +806,75 @@ fn control_help(controls: &ControlBindings) -> String {
     #[cfg(not(feature = "debug_tools"))]
     {
         text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::catalog::ZombieKind;
+    use crate::game::level::{ZombieSpawnDefinition, ZombieWaveDefinition};
+
+    #[test]
+    fn wave_progress_markers_follow_wave_starts_and_spawn_times() {
+        let definition = LevelDefinition {
+            waves: vec![
+                ZombieWaveDefinition {
+                    start_seconds: 4.0,
+                    spawns: vec![
+                        ZombieSpawnDefinition {
+                            at_seconds: 4.0,
+                            kind: ZombieKind::Basic,
+                        },
+                        ZombieSpawnDefinition {
+                            at_seconds: 6.0,
+                            kind: ZombieKind::Basic,
+                        },
+                        ZombieSpawnDefinition {
+                            at_seconds: 6.0,
+                            kind: ZombieKind::Conehead,
+                        },
+                    ],
+                },
+                ZombieWaveDefinition {
+                    start_seconds: 11.0,
+                    spawns: vec![ZombieSpawnDefinition {
+                        at_seconds: 12.0,
+                        kind: ZombieKind::Buckethead,
+                    }],
+                },
+            ],
+            ..default()
+        };
+
+        assert_eq!(wave_timeline_total_seconds(&definition), 12.0);
+        assert_eq!(progress_percent(6.0, 12.0), 50.0);
+
+        let markers = wave_progress_markers(&definition);
+        assert_eq!(
+            markers,
+            vec![
+                WaveProgressMarker {
+                    seconds: 4.0,
+                    kind: WaveProgressMarkerKind::WaveStart,
+                },
+                WaveProgressMarker {
+                    seconds: 4.0,
+                    kind: WaveProgressMarkerKind::Spawn,
+                },
+                WaveProgressMarker {
+                    seconds: 6.0,
+                    kind: WaveProgressMarkerKind::Spawn,
+                },
+                WaveProgressMarker {
+                    seconds: 11.0,
+                    kind: WaveProgressMarkerKind::WaveStart,
+                },
+                WaveProgressMarker {
+                    seconds: 12.0,
+                    kind: WaveProgressMarkerKind::Spawn,
+                },
+            ]
+        );
     }
 }
