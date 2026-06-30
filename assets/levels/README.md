@@ -63,7 +63,10 @@ RowThreePhysicsLine
 - `RowThreePhysicsLine`: 到达 row 0 最左侧后销毁原路径豌豆，并在 row 3 高度从草坪最左到最右生成 20 个物理豌豆。生成物理豌豆会继承触发弹丸当前的 `ProjectileKind` 与伤害，因此已经穿过火炬的火豌豆会变成物理火豌豆。
 
 默认关卡 `level_01.ron` 使用 `Straight`。示例物理关卡
-`level_row_three_physics_line.ron` 把后期波次压缩为总共 6 波，并把后一波的完整强度错峰叠加到前一波，终局波则叠加自身。所有波次从开场起保持高密度怪群与巨人队列，用于观察物理豌豆铺场效果；该关卡也开启了 `gatling_pea_upgrade_only`。
+`level_row_three_physics_line.ron` 把后期波次压缩并追加为总共 7 波。前两波分别用
+24 秒生成 96 只、36 秒生成 320 只；第三波开始进入高密度怪群，后续每波至少翻倍，
+最后一只仍在 365 秒生成。该关卡用于观察大规模尸潮下的物理豌豆铺场效果，也开启了
+`gatling_pea_upgrade_only`。
 
 ## 固定植物卡片
 

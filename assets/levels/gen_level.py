@@ -503,6 +503,174 @@ waves_config = add_late_wave_fillers(waves_config, LATE_WAVE_FILLERS)
 waves_config = promote_next_wave_intensity(waves_config)
 
 # =============================================
+# Strengthen pass
+# =============================================
+# Requirements for the row-three physics stress-test variant:
+# 1. Give the first two waves a playable ramp instead of opening at stress-test
+#    density.
+# 2. Compress the following original waves so a new final wave fits in the
+#    original 6m5s target timeline.
+# 3. Starting from wave 3, retain the promoted mix and grow each later wave to
+#    at least 2x the previous wave.
+EARLY_WAVE_TARGETS = (
+    (96, 2, 24.0),
+    (320, 20, 36.0),
+)
+FOLLOWING_ORIGINAL_WAVE_DURATION_SCALE = 0.75
+FOLLOWING_WAVE_DELAY_SECONDS = 1.0
+
+
+def entries_duration(entries):
+    return wave_duration(entries)
+
+
+def scale_entries_time(entries, scale):
+    return [
+        (entry_delay * scale, kind, count, interval * scale)
+        for entry_delay, kind, count, interval in entries
+    ]
+
+
+def total_entries_count(entries):
+    return sum(count for _entry_delay, _kind, count, _interval in entries)
+
+
+def resize_entry_counts(entries, target_total, minimum_per_entry=1):
+    if target_total < len(entries) * minimum_per_entry:
+        raise ValueError("target total is below the per-entry minimum")
+
+    current_total = total_entries_count(entries)
+    scale = target_total / current_total
+    resized = []
+    fractional_parts = []
+    assigned_total = 0
+    for index, (entry_delay, kind, count, interval) in enumerate(entries):
+        scaled_count = count * scale
+        new_count = max(minimum_per_entry, int(scaled_count))
+        resized.append([entry_delay, kind, new_count, interval])
+        fractional_parts.append((scaled_count - int(scaled_count), index))
+        assigned_total += new_count
+
+    for _fraction, index in sorted(fractional_parts):
+        if assigned_total <= target_total:
+            break
+        removable = min(
+            resized[index][2] - minimum_per_entry, assigned_total - target_total
+        )
+        resized[index][2] -= removable
+        assigned_total -= removable
+
+    index = 0
+    ranked = [item[1] for item in sorted(fractional_parts, reverse=True)]
+    while assigned_total < target_total:
+        resized[ranked[index % len(ranked)]][2] += 1
+        assigned_total += 1
+        index += 1
+
+    return [tuple(entry) for entry in resized if entry[2] > 0]
+
+
+def resize_early_wave(entries, target_total, giant_target):
+    giant_kinds = {"Gargantuar", "GigaGargantuar"}
+    giants = [entry for entry in entries if entry[1] in giant_kinds]
+    others = [entry for entry in entries if entry[1] not in giant_kinds]
+    resized = resize_entry_counts(others, target_total - giant_target)
+    resized.extend(resize_entry_counts(giants, giant_target, minimum_per_entry=0))
+    resized.sort(key=lambda entry: (entry[0], entry[1]))
+    return resized
+
+
+def expand_entry_counts_to_at_least(entries, minimum_total):
+    current_total = total_entries_count(entries)
+    if current_total >= minimum_total:
+        return list(entries)
+
+    scale = minimum_total / current_total
+    expanded = []
+    fractional_parts = []
+    assigned_total = 0
+    for index, (entry_delay, kind, count, interval) in enumerate(entries):
+        target = count * scale
+        new_count = max(count, int(target))
+        expanded.append([entry_delay, kind, new_count, interval])
+        fractional_parts.append((target - int(target), index))
+        assigned_total += new_count
+
+    # Distribute the rounding remainder to the entries with largest fractional
+    # parts. This keeps the mix close to the original composition while meeting
+    # the exact minimum count.
+    for _fraction, index in sorted(fractional_parts, reverse=True):
+        if assigned_total >= minimum_total:
+            break
+        expanded[index][2] += 1
+        assigned_total += 1
+
+    # Safety net for pathological small waves.
+    index = 0
+    while assigned_total < minimum_total:
+        expanded[index % len(expanded)][2] += 1
+        assigned_total += 1
+        index += 1
+
+    return [tuple(entry) for entry in expanded]
+
+
+def fit_wave_to_duration(entries, target_duration):
+    current_duration = entries_duration(entries)
+    if current_duration <= 0:
+        raise ValueError("wave duration must be positive")
+    return scale_entries_time(entries, target_duration / current_duration)
+
+
+def strengthen_waves(waves):
+    strengthened = []
+
+    # Waves 1-2: reduce count and spread spawns out before the stress ramp.
+    for wave_index, (
+        (delay, entries),
+        (target_count, giant_target, target_duration),
+    ) in enumerate(
+        zip(waves[:2], EARLY_WAVE_TARGETS)
+    ):
+        entries = resize_early_wave(entries, target_count, giant_target)
+        entries = fit_wave_to_duration(entries, target_duration)
+        strengthened.append(
+            (delay if wave_index == 0 else FOLLOWING_WAVE_DELAY_SECONDS, entries)
+        )
+
+    previous_total = total_entries_count(strengthened[-1][1])
+
+    # Waves 3-6: keep the promoted mix, add more if needed for 2x growth, and
+    # reduce timings so the extra terminal wave still fits.
+    for _wave_index, (_delay, entries) in enumerate(waves[2:], start=3):
+        original_duration = entries_duration(entries)
+        target_duration = original_duration * FOLLOWING_ORIGINAL_WAVE_DURATION_SCALE
+        entries = expand_entry_counts_to_at_least(entries, previous_total * 2)
+        entries = fit_wave_to_duration(entries, target_duration)
+        strengthened.append((FOLLOWING_WAVE_DELAY_SECONDS, entries))
+        previous_total = total_entries_count(entries)
+
+    # Wave 7: use the previous final wave as the shape of the new terminal
+    # pressure wave. Its duration is the remaining budget in the old 6m5s
+    # timeline, so the level keeps the same target last spawn time.
+    previous_elapsed = timeline_total_seconds(strengthened)
+    final_delay = FOLLOWING_WAVE_DELAY_SECONDS
+    final_duration = TARGET_LAST_SPAWN_SECONDS - previous_elapsed - final_delay
+    if final_duration <= 0:
+        raise ValueError("not enough room left for the extra final wave")
+
+    final_entries = expand_entry_counts_to_at_least(
+        strengthened[-1][1], previous_total * 2
+    )
+    final_entries = fit_wave_to_duration(final_entries, final_duration)
+    strengthened.append((final_delay, final_entries))
+
+    return strengthened
+
+
+waves_config = strengthen_waves(waves_config)
+
+# =============================================
 # Timing Analysis
 # =============================================
 print("=== Timing Analysis ===", flush=True)
@@ -517,6 +685,7 @@ print(f"Total zombies: {total_spawn_count(waves_config)}", flush=True)
 
 elapsed = 0.0
 all_last_spawns = []
+previous_wave_count = 0
 for i, (delay, entries) in enumerate(waves_config, start=1):
     start = elapsed + delay
     entry_ends = []
@@ -528,10 +697,23 @@ for i, (delay, entries) in enumerate(waves_config, start=1):
     elapsed = last
 
     garg_count = sum(c for _, k, c, _ in entries if k in ("Gargantuar", "GigaGargantuar"))
-    print(f"Wave {i:2d}: start={start:6.1f}, last_spawn={last:6.1f}s, giants={garg_count:2d}", flush=True)
+    total_count = sum(c for _, _k, c, _ in entries)
+    ratio = "-" if i == 1 else f"{total_count / previous_wave_count:.2f}x"
+    print(
+        f"Wave {i:2d}: start={start:6.1f}, last_spawn={last:6.1f}s, "
+        f"duration={last - start:6.1f}s, zombies={total_count:5d}, "
+        f"ratio={ratio:>5}, giants={garg_count:5d}",
+        flush=True,
+    )
+    previous_wave_count = total_count
 
 total = max(all_last_spawns)
-print(f"\nOverall last spawn: {total:.1f}s = {int(total//60)}m{int(total%60)}s", flush=True)
+rounded_total = int(round(total))
+print(
+    f"\nOverall last spawn: {total:.1f}s = "
+    f"{rounded_total // 60}m{rounded_total % 60}s",
+    flush=True,
+)
 print(f"Target: {TARGET_LAST_SPAWN_SECONDS}s = 6m5s", flush=True)
 print(f"Difference: {total - TARGET_LAST_SPAWN_SECONDS:.3f}s", flush=True)
 
@@ -552,7 +734,15 @@ def fmt_num(v):
         text += ".0"
     return text
 
-WAVE_COMMENTS = [comment for _start, _end, comment in WAVE_GROUPS]
+WAVE_COMMENTS = [
+    "第 1 波：24 秒热身 — 96 只低密度开场",
+    "第 2 波：36 秒推进 — 320 只逐步加压",
+    "第 3 波：高压起点 — 保留强化阵容",
+    "第 4 波：倍增洪峰 — 出怪量至少为上一波 2x",
+    "第 5 波：终局前夜 — 出怪量至少为上一波 2x",
+    "第 6 波：终局压缩 — 出怪量至少为上一波 2x",
+    "第 7 波：新增终局波 — 出怪量至少为上一波 2x",
+]
 
 lines = []
 lines.append("(")
