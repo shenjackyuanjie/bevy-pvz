@@ -322,7 +322,7 @@ impl Default for ContentCatalog {
                 PlantDefinition {
                     kind: PlantKind::GatlingPea,
                     display_name: "机枪射手",
-                    price: 325,
+                    price: 250,
                     card_cooldown: Duration::from_secs(7),
                     health: 140.0,
                     visual: UnitVisualDefinition {
