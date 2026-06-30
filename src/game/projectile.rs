@@ -391,7 +391,6 @@ fn spawn_projectiles(
                 Ccd {
                     enabled: ccd && render_detail == ProjectileRenderDetail::Full,
                 },
-                ActiveEvents::COLLISION_EVENTS,
                 physics_projectile_groups(),
             )),
         };
@@ -831,7 +830,6 @@ fn spawn_physics_projectile_entity(
         Ccd {
             enabled: physics.ccd && render_detail == ProjectileRenderDetail::Full,
         },
-        ActiveEvents::COLLISION_EVENTS,
         physics_projectile_groups(),
     );
     let mut projectile = commands.spawn((base, physics));
