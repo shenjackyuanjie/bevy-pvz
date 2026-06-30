@@ -23,11 +23,10 @@
         (
             delay: 8.0,
             wave: [
-                (delay: 0.0, kind: Basic, count: 3, interval: 3.5),
-                (delay: 17.0, kind: Basic, count: 4, interval: 3.0),
-                (delay: 35.0, kind: Conehead, count: 2, interval: 1.8),
-                (delay: 46.8, kind: Basic, count: 5, interval: 2.5),
-                (delay: 65.8, kind: PoleVaulting, count: 2, interval: 1.0),
+                (delay: 0.0, kind: Basic, count: 8, interval: 8.0),
+                (delay: 5.0, kind: Conehead, count: 4, interval: 14.0),
+                (delay: 9.0, kind: Buckethead, count: 2, interval: 26.0),
+                (delay: 13.0, kind: PoleVaulting, count: 2, interval: 24.0),
             ],
         ),
 
@@ -35,11 +34,11 @@
         (
             delay: 10.0,
             wave: [
-                (delay: 0.0, kind: Basic, count: 5, interval: 2.5),
-                (delay: 18.0, kind: Conehead, count: 3, interval: 1.5),
-                (delay: 29.0, kind: Newspaper, count: 2, interval: 1.0),
-                (delay: 40.0, kind: ScreenDoor, count: 2, interval: 1.5),
-                (delay: 50.5, kind: Buckethead, count: 2, interval: 1.5),
+                (delay: 0.0, kind: Basic, count: 5, interval: 9.0),
+                (delay: 4.0, kind: Conehead, count: 3, interval: 13.0),
+                (delay: 8.0, kind: Newspaper, count: 2, interval: 18.0),
+                (delay: 12.0, kind: ScreenDoor, count: 2, interval: 20.0),
+                (delay: 16.0, kind: Buckethead, count: 2, interval: 22.0),
             ],
         ),
 
@@ -47,11 +46,11 @@
         (
             delay: 10.0,
             wave: [
-                (delay: 0.0, kind: Basic, count: 6, interval: 2.0),
-                (delay: 18.0, kind: Conehead, count: 3, interval: 1.2),
-                (delay: 28.4, kind: ScreenDoor, count: 2, interval: 1.0),
-                (delay: 41.4, kind: Football, count: 3, interval: 1.0),
-                (delay: 53.4, kind: Zomboni, count: 2, interval: 1.5),
+                (delay: 0.0, kind: Basic, count: 6, interval: 8.0),
+                (delay: 4.0, kind: Conehead, count: 3, interval: 14.0),
+                (delay: 8.0, kind: ScreenDoor, count: 2, interval: 22.0),
+                (delay: 12.0, kind: Football, count: 3, interval: 16.0),
+                (delay: 18.0, kind: Zomboni, count: 2, interval: 26.0),
             ],
         ),
 
@@ -59,11 +58,11 @@
         (
             delay: 10.0,
             wave: [
-                (delay: 0.0, kind: Buckethead, count: 4, interval: 1.0),
-                (delay: 11.0, kind: JackInTheBox, count: 2, interval: 1.0),
-                (delay: 20.0, kind: Balloon, count: 2, interval: 1.0),
-                (delay: 33.0, kind: Football, count: 4, interval: 1.0),
-                (delay: 46.0, kind: Gargantuar, count: 1, interval: 1.0),
+                (delay: 0.0, kind: Buckethead, count: 4, interval: 10.0),
+                (delay: 5.0, kind: JackInTheBox, count: 2, interval: 22.0),
+                (delay: 9.0, kind: Balloon, count: 2, interval: 24.0),
+                (delay: 13.0, kind: Football, count: 4, interval: 11.0),
+                (delay: 24.0, kind: Gargantuar, count: 1, interval: 1.0),
             ],
         ),
 
@@ -71,11 +70,11 @@
         (
             delay: 10.0,
             wave: [
-                (delay: 0.0, kind: Catapult, count: 2, interval: 1.2),
-                (delay: 9.2, kind: Digger, count: 2, interval: 1.0),
-                (delay: 18.2, kind: Pogo, count: 2, interval: 1.0),
-                (delay: 27.2, kind: Imp, count: 3, interval: 0.6),
-                (delay: 40.4, kind: Gargantuar, count: 2, interval: 2.0),
+                (delay: 0.0, kind: Catapult, count: 2, interval: 24.0),
+                (delay: 5.0, kind: Digger, count: 2, interval: 22.0),
+                (delay: 9.0, kind: Pogo, count: 2, interval: 22.0),
+                (delay: 13.0, kind: Imp, count: 3, interval: 11.0),
+                (delay: 18.0, kind: Gargantuar, count: 2, interval: 26.0),
             ],
         ),
 
@@ -83,11 +82,11 @@
         (
             delay: 8.0,
             wave: [
-                (delay: 0.0, kind: Imp, count: 4, interval: 0.6),
-                (delay: 11.8, kind: Football, count: 5, interval: 0.8),
-                (delay: 23.0, kind: JackInTheBox, count: 2, interval: 0.8),
-                (delay: 35.8, kind: Gargantuar, count: 2, interval: 1.5),
-                (delay: 47.3, kind: Zomboni, count: 3, interval: 1.0),
+                (delay: 0.0, kind: Imp, count: 4, interval: 10.0),
+                (delay: 4.0, kind: Football, count: 5, interval: 8.0),
+                (delay: 10.0, kind: JackInTheBox, count: 2, interval: 24.0),
+                (delay: 16.0, kind: Gargantuar, count: 2, interval: 26.0),
+                (delay: 20.0, kind: Zomboni, count: 3, interval: 15.0),
             ],
         ),
 
@@ -95,11 +94,11 @@
         (
             delay: 12.0,
             wave: [
-                (delay: 0.0, kind: Gargantuar, count: 2, interval: 1.2),
-                (delay: 9.2, kind: Imp, count: 4, interval: 0.5),
-                (delay: 20.7, kind: Catapult, count: 3, interval: 1.0),
-                (delay: 32.7, kind: Football, count: 4, interval: 0.7),
-                (delay: 46.8, kind: GigaGargantuar, count: 1, interval: 1.0),
+                (delay: 0.0, kind: Gargantuar, count: 2, interval: 25.0),
+                (delay: 3.0, kind: Imp, count: 4, interval: 9.0),
+                (delay: 8.0, kind: Catapult, count: 3, interval: 15.0),
+                (delay: 12.0, kind: Football, count: 4, interval: 10.0),
+                (delay: 24.0, kind: GigaGargantuar, count: 1, interval: 1.0),
             ],
         ),
     ],
