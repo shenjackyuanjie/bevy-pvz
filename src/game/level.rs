@@ -113,7 +113,7 @@ pub enum LevelSetupSet {
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct LevelId(pub String);
 
-/// 卡片列表是显示顺序与植物映射的唯一来源。
+/// 固定卡片列表项，定义显示顺序与植物映射。
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct PlantCardDefinition {
     pub slot: u8,
@@ -165,7 +165,6 @@ struct LevelConfig {
     #[serde(default)]
     gatling_pea_upgrade_only: bool,
     lawn: LawnConfig,
-    cards: Vec<PlantCardConfig>,
     waves: Vec<WaveConfig>,
 }
 
@@ -176,13 +175,6 @@ struct LawnConfig {
     cell_size: (f32, f32),
     center_x: f32,
     path_y: f32,
-}
-
-#[derive(Debug, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PlantCardConfig {
-    slot: u8,
-    plant: PlantKind,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -233,14 +225,7 @@ impl LevelDefinition {
                 config.lawn.path_y - cell_size.y * 0.5,
             ),
         };
-        let cards = config
-            .cards
-            .into_iter()
-            .map(|card| PlantCardDefinition {
-                slot: card.slot,
-                plant: card.plant,
-            })
-            .collect();
+        let cards = default_plant_cards();
         let waves = expand_waves(config.waves)?;
         Ok(Self {
             id: LevelId(config.id),
@@ -325,6 +310,26 @@ impl LevelDefinition {
         }
         Ok(())
     }
+}
+
+fn default_plant_cards() -> Vec<PlantCardDefinition> {
+    [
+        PlantKind::Sunflower,
+        PlantKind::TwinSunflower,
+        PlantKind::Peashooter,
+        PlantKind::Repeater,
+        PlantKind::GatlingPea,
+        PlantKind::SnowPea,
+        PlantKind::WallNut,
+        PlantKind::Torchwood,
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, plant)| PlantCardDefinition {
+        slot: index as u8 + 1,
+        plant,
+    })
+    .collect()
 }
 
 fn expand_waves(waves: Vec<WaveConfig>) -> Result<Vec<ZombieWaveDefinition>, String> {

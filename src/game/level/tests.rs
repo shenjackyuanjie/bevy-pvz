@@ -81,6 +81,36 @@ fn ron_level_is_complete_and_valid() {
 }
 
 #[test]
+fn row_three_physics_line_uses_six_waves_and_ends_at_six_minutes_five_seconds() {
+    let level =
+        LevelDefinition::load_from_file("assets/levels/level_row_three_physics_line.ron").unwrap();
+
+    assert_eq!(level.waves.len(), 6);
+    assert_eq!(
+        level
+            .waves
+            .iter()
+            .map(|wave| wave.spawns.len())
+            .sum::<usize>(),
+        1673
+    );
+    assert_eq!(level.waves[0].start_seconds, 8.0);
+    assert_eq!(level.waves[0].spawns.last().unwrap().at_seconds, 64.0);
+
+    let last_spawn = level
+        .waves
+        .iter()
+        .filter_map(|wave| wave.spawns.last())
+        .map(|spawn| spawn.at_seconds)
+        .max_by(f32::total_cmp)
+        .unwrap();
+    assert!(
+        (last_spawn - 365.0).abs() < 0.01,
+        "last spawn should be at 365s, got {last_spawn}"
+    );
+}
+
+#[test]
 fn ron_wave_entries_are_relative_to_their_wave_start() {
     let level = LevelDefinition::from_ron_str(
         r#"
@@ -94,9 +124,6 @@ fn ron_wave_entries_are_relative_to_their_wave_start() {
                 center_x: -50.0,
                 path_y: -215.0,
             ),
-            cards: [
-                (slot: 1, plant: Sunflower),
-            ],
             waves: [
                 (
                     delay: 5.0,
@@ -119,6 +146,7 @@ fn ron_wave_entries_are_relative_to_their_wave_start() {
     .unwrap();
 
     assert!(!level.always_shoot);
+    assert_eq!(level.cards, default_plant_cards());
     let first_wave_times: Vec<f32> = level.waves[0]
         .spawns
         .iter()
@@ -159,9 +187,6 @@ fn ron_level_reads_optional_rules() {
                 center_x: -50.0,
                 path_y: -215.0,
             ),
-            cards: [
-                (slot: 1, plant: Peashooter),
-            ],
             waves: [
                 (
                     delay: 1.0,

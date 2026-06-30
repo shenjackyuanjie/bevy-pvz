@@ -24,11 +24,6 @@ cargo run -- --level assets/levels/level_row_three_physics_line.ron
         center_x: -50.0,
         path_y: -215.0,
     ),
-    cards: [
-        (slot: 1, plant: Sunflower),
-        (slot: 2, plant: Peashooter),
-        (slot: 3, plant: SnowPea),
-    ],
     waves: [
         (
             delay: 8.0,
@@ -53,7 +48,6 @@ cargo run -- --level assets/levels/level_row_three_physics_line.ron
 - `lawn.cell_size`: 单格宽高，单位是世界像素。
 - `lawn.center_x`: 草坪整体中心 X。
 - `lawn.path_y`: 僵尸行进道路中心 Y。
-- `cards`: 可选植物卡片列表。`slot` 不能重复，`plant` 不能重复。
 - `waves`: 显式大波列表。每个数组元素是一大波。
 
 ## pea_path_arrival_effect
@@ -69,18 +63,19 @@ RowThreePhysicsLine
 - `RowThreePhysicsLine`: 到达 row 0 最左侧后销毁原路径豌豆，并在 row 3 高度从草坪最左到最右生成 20 个物理豌豆。生成物理豌豆会继承触发弹丸当前的 `ProjectileKind` 与伤害，因此已经穿过火炬的火豌豆会变成物理火豌豆。
 
 默认关卡 `level_01.ron` 使用 `Straight`。示例物理关卡
-`level_row_three_physics_line.ron` 保持同样的 12 波结构，但僵尸数量更多、间隔更短，用于观察物理豌豆铺场效果；该关卡也开启了 `gatling_pea_upgrade_only`。
+`level_row_three_physics_line.ron` 把后期波次压缩为总共 6 波，但不增加僵尸数量，用于观察物理豌豆铺场效果；该关卡也开启了 `gatling_pea_upgrade_only`。
 
-## cards
+## 固定植物卡片
 
-`plant` 使用 `PlantKind` 名称：
+植物卡片不写在关卡 RON 中，由 `src/game/level.rs` 的固定列表定义：
 
 ```ron
 Sunflower
+TwinSunflower
 Peashooter
-SnowPea
 Repeater
 GatlingPea
+SnowPea
 WallNut
 Torchwood
 ```
