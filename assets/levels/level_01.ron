@@ -62,7 +62,7 @@
                 (delay: 5.0, kind: JackInTheBox, count: 2, interval: 22.0),
                 (delay: 9.0, kind: Balloon, count: 2, interval: 24.0),
                 (delay: 13.0, kind: Football, count: 4, interval: 11.0),
-                (delay: 24.0, kind: Gargantuar, count: 1, interval: 1.0),
+                (delay: 20.0, kind: Gargantuar, count: 1, interval: 1.0),
             ],
         ),
 
@@ -78,27 +78,87 @@
             ],
         ),
 
-        // ========== 第 6 大波：终极冲锋 ==========
+        // ========== 第 6 大波：巨人加入 ==========
         (
             delay: 8.0,
             wave: [
                 (delay: 0.0, kind: Imp, count: 4, interval: 10.0),
                 (delay: 4.0, kind: Football, count: 5, interval: 8.0),
                 (delay: 10.0, kind: JackInTheBox, count: 2, interval: 24.0),
-                (delay: 16.0, kind: Gargantuar, count: 2, interval: 26.0),
+                (delay: 14.0, kind: Gargantuar, count: 3, interval: 16.0),
                 (delay: 20.0, kind: Zomboni, count: 3, interval: 15.0),
             ],
         ),
 
-        // ========== 第 7 大波：最终尸潮 ==========
+        // ========== 第 7 大波：巨人预警 ==========
         (
             delay: 12.0,
             wave: [
-                (delay: 0.0, kind: Gargantuar, count: 2, interval: 25.0),
-                (delay: 3.0, kind: Imp, count: 4, interval: 9.0),
+                (delay: 0.0, kind: Imp, count: 4, interval: 9.0),
+                (delay: 4.0, kind: Buckethead, count: 4, interval: 11.0),
                 (delay: 8.0, kind: Catapult, count: 3, interval: 15.0),
                 (delay: 12.0, kind: Football, count: 4, interval: 10.0),
-                (delay: 24.0, kind: GigaGargantuar, count: 1, interval: 1.0),
+                (delay: 16.0, kind: Gargantuar, count: 3, interval: 16.0),
+                (delay: 30.0, kind: GigaGargantuar, count: 1, interval: 1.0),
+            ],
+        ),
+
+        // ========== 第 8 大波：巨人压线 ==========
+        (
+            delay: 12.0,
+            wave: [
+                (delay: 0.0, kind: Gargantuar, count: 3, interval: 18.0),
+                (delay: 3.0, kind: Football, count: 5, interval: 9.0),
+                (delay: 7.0, kind: ScreenDoor, count: 3, interval: 16.0),
+                (delay: 12.0, kind: Imp, count: 5, interval: 8.0),
+            ],
+        ),
+
+        // ========== 第 9 大波：巨人结队 ==========
+        (
+            delay: 10.0,
+            wave: [
+                (delay: 0.0, kind: Gargantuar, count: 3, interval: 17.0),
+                (delay: 4.0, kind: GigaGargantuar, count: 1, interval: 1.0),
+                (delay: 6.0, kind: Zomboni, count: 3, interval: 14.0),
+                (delay: 10.0, kind: Catapult, count: 3, interval: 15.0),
+                (delay: 14.0, kind: Balloon, count: 3, interval: 18.0),
+            ],
+        ),
+
+        // ========== 第 10 大波：巨人推进 ==========
+        (
+            delay: 10.0,
+            wave: [
+                (delay: 0.0, kind: Gargantuar, count: 4, interval: 15.0),
+                (delay: 5.0, kind: GigaGargantuar, count: 1, interval: 1.0),
+                (delay: 8.0, kind: JackInTheBox, count: 3, interval: 18.0),
+                (delay: 12.0, kind: Digger, count: 3, interval: 16.0),
+                (delay: 16.0, kind: Football, count: 5, interval: 8.0),
+            ],
+        ),
+
+        // ========== 第 11 大波：巨人围攻 ==========
+        (
+            delay: 10.0,
+            wave: [
+                (delay: 0.0, kind: Gargantuar, count: 5, interval: 14.0),
+                (delay: 5.0, kind: GigaGargantuar, count: 1, interval: 1.0),
+                (delay: 8.0, kind: Pogo, count: 4, interval: 14.0),
+                (delay: 12.0, kind: Catapult, count: 4, interval: 13.0),
+                (delay: 16.0, kind: Imp, count: 7, interval: 7.0),
+            ],
+        ),
+
+        // ========== 第 12 大波：巨人终局 ==========
+        (
+            delay: 12.0,
+            wave: [
+                (delay: 0.0, kind: Gargantuar, count: 5, interval: 13.0),
+                (delay: 4.0, kind: GigaGargantuar, count: 2, interval: 28.0),
+                (delay: 8.0, kind: Zomboni, count: 4, interval: 12.0),
+                (delay: 12.0, kind: Football, count: 6, interval: 8.0),
+                (delay: 16.0, kind: JackInTheBox, count: 3, interval: 20.0),
             ],
         ),
     ],

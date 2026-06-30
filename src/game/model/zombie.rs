@@ -46,7 +46,63 @@ fn base_zombie_parts(palette: ZombiePalette, alpha: f32) -> Vec<ModelPart> {
     let shirt = Color::srgb(0.82, 0.78, 0.64);
     let shoe = Color::srgb(0.07, 0.08, 0.07);
     let pupil = Color::srgb(0.04, 0.05, 0.04);
+    let outline = Color::srgb(0.05, 0.07, 0.045);
+    let highlight = Color::srgb(0.73, 0.84, 0.56);
     vec![
+        part(
+            "僵尸左腿轮廓",
+            outline,
+            Vec2::new(16.0, 36.0),
+            Vec2::new(-10.0, -25.0),
+            -0.08,
+            0.05,
+            alpha * 0.78,
+        ),
+        part(
+            "僵尸右腿轮廓",
+            outline,
+            Vec2::new(16.0, 36.0),
+            Vec2::new(9.0, -24.0),
+            0.10,
+            0.05,
+            alpha * 0.78,
+        ),
+        part(
+            "僵尸左臂轮廓",
+            outline,
+            Vec2::new(14.0, 41.0),
+            Vec2::new(-22.0, 3.0),
+            -0.55,
+            0.05,
+            alpha * 0.78,
+        ),
+        part(
+            "僵尸右臂轮廓",
+            outline,
+            Vec2::new(14.0, 43.0),
+            Vec2::new(23.0, 5.0),
+            0.68,
+            0.05,
+            alpha * 0.78,
+        ),
+        part(
+            "僵尸躯干轮廓",
+            outline,
+            Vec2::new(40.0, 46.0),
+            Vec2::new(0.0, 1.0),
+            -0.05,
+            0.18,
+            alpha * 0.76,
+        ),
+        part(
+            "僵尸头轮廓",
+            outline,
+            Vec2::new(39.0, 36.0),
+            Vec2::new(0.0, 29.0),
+            0.08,
+            0.28,
+            alpha * 0.76,
+        ),
         part(
             "僵尸左腿",
             trousers,
@@ -138,6 +194,15 @@ fn base_zombie_parts(palette: ZombiePalette, alpha: f32) -> Vec<ModelPart> {
             alpha,
         ),
         part(
+            "僵尸肩部高光",
+            highlight,
+            Vec2::new(5.0, 30.0),
+            Vec2::new(-15.0, 5.0),
+            -0.12,
+            0.35,
+            alpha * 0.82,
+        ),
+        part(
             "僵尸左臂",
             skin,
             Vec2::new(10.0, 37.0),
@@ -163,6 +228,15 @@ fn base_zombie_parts(palette: ZombiePalette, alpha: f32) -> Vec<ModelPart> {
             0.08,
             0.3,
             alpha,
+        ),
+        part(
+            "僵尸头部高光",
+            highlight,
+            Vec2::new(5.0, 19.0),
+            Vec2::new(-11.0, 33.0),
+            0.13,
+            0.46,
+            alpha * 0.78,
         ),
         part(
             "僵尸左眼",
