@@ -18,17 +18,18 @@ use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderCenterOffset, ColliderHalfSize, ContentCatalog};
 use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Health, Team};
 use crate::game::lawn::{GridCell, LawnLayout};
-use crate::game::model::{model_bounds, zombie_model_parts};
+use crate::game::model::{ZombieModelDetail, model_bounds, zombie_model_parts_with_detail};
 use crate::game::physics::zombie_groups;
 use crate::game::plant::Plant;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
-use crate::game::theme::UiTheme;
+use crate::game::theme::{SceneLabelStyle, UiTheme};
 
 pub use crate::game::catalog::ZombieKind;
 
 const CHILL_DURATION: Duration = Duration::from_secs(10);
 const CHILL_TIME_SCALE: f32 = 0.5;
+const HORDE_SIMPLIFICATION_THRESHOLD: usize = 180;
 
 /// 僵尸插件，注册生成、状态更新、行走和攻击系统。
 pub struct ZombiePlugin;
@@ -36,6 +37,10 @@ pub struct ZombiePlugin;
 impl Plugin for ZombiePlugin {
     fn build(&self, app: &mut App) {
         app.add_message::<SpawnZombie>()
+            .add_systems(
+                Update,
+                ensure_zombie_debug_children.run_if(in_state(GameState::Playing)),
+            )
             .add_systems(
                 Update,
                 (update_zombie_health_debug, update_zombie_equipment_parts)
@@ -117,6 +122,9 @@ struct ZombieNameText;
 #[derive(Component)]
 struct ZombieEquipmentPart;
 
+#[derive(Component)]
+struct ZombieDebugOverlaySpawned;
+
 /// 用于避免同一系统中多组查询冲突的排除过滤。
 type ZombieHealthTextFilter = (
     With<ZombieHealthText>,
@@ -157,11 +165,16 @@ pub struct SpawnZombie {
 pub(crate) fn spawn_zombies(
     mut commands: Commands,
     assets: Option<Res<GameAssets>>,
+    debug: Option<Res<DebugRenderContext>>,
     theme: Option<Res<UiTheme>>,
     catalog: Res<ContentCatalog>,
     mut requests: MessageReader<SpawnZombie>,
     layout: Res<LawnLayout>,
+    zombies: Query<(), With<Zombie>>,
 ) {
+    let debug_enabled = debug.as_ref().is_some_and(|context| context.enabled);
+    let mut zombie_count = zombies.iter().len();
+
     for request in requests.read() {
         let definition = catalog.zombie(request.kind);
         let position = Vec2::new(layout.right() + definition.spawn_offset_x, layout.path_y());
@@ -174,7 +187,12 @@ pub(crate) fn spawn_zombies(
             .as_ref()
             .map(|assets| assets.chinese_font.clone())
             .unwrap_or_default();
-        let model_parts = zombie_model_parts(request.kind, 1.0);
+        let detail = if zombie_count >= HORDE_SIMPLIFICATION_THRESHOLD {
+            ZombieModelDetail::Simplified
+        } else {
+            ZombieModelDetail::Full
+        };
+        let model_parts = zombie_model_parts_with_detail(request.kind, 1.0, detail);
         let model_bounds = model_bounds(&model_parts);
         // 透明根节点承担碰撞与逻辑，子级色块、名牌和血条自动跟随。
         let mut entity = commands.spawn((
@@ -215,6 +233,9 @@ pub(crate) fn spawn_zombies(
         if let Some(equipment_health) = definition.equipment_health {
             entity.insert(EquipmentHealth::new(equipment_health));
         }
+        if debug_enabled {
+            entity.insert(ZombieDebugOverlaySpawned);
+        }
         entity.with_children(|parent| {
             for part in model_parts {
                 let mut child = parent.spawn((
@@ -227,93 +248,173 @@ pub(crate) fn spawn_zombies(
                     child.insert(ZombieEquipmentPart);
                 }
             }
-            parent.spawn((
-                Text2d::new(definition.scene_label),
-                TextFont {
-                    font: font.clone(),
-                    font_size: label.font_size,
-                    ..default()
-                },
-                TextColor(label.text),
-                TextBackgroundColor(label.background),
-                TextLayout::new_with_justify(Justify::Center),
-                Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
-                Visibility::Hidden,
-                ZombieNameText,
-                Name::new("僵尸名称"),
-            ));
-            parent.spawn((
-                Sprite::from_color(Color::srgba(0.04, 0.04, 0.04, 0.9), Vec2::new(62.0, 10.0)),
-                Transform::from_xyz(0.0, 49.0, 4.0),
-                Visibility::Hidden,
-                ZombieHealthBarBackground,
-                Name::new("僵尸血条背景"),
-            ));
-            parent.spawn((
-                Sprite::from_color(Color::srgb(0.2, 0.9, 0.18), Vec2::new(58.0, 6.0)),
-                Transform::from_xyz(0.0, 49.0, 4.1),
-                Visibility::Hidden,
-                ZombieHealthBarFill,
-                Name::new("僵尸血条"),
-            ));
-            let full_health = definition.health + definition.equipment_health.unwrap_or(0.0);
-            parent.spawn((
-                Text2d::new(format!("{full_health:.0} / {full_health:.0}")),
-                TextFont {
+            if debug_enabled {
+                let full_health = definition.health + definition.equipment_health.unwrap_or(0.0);
+                spawn_zombie_debug_overlay(
+                    parent,
+                    definition.scene_label,
+                    full_health,
                     font,
-                    font_size: 9.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                Transform::from_xyz(0.0, 63.0, 4.2),
-                Visibility::Hidden,
-                ZombieHealthText,
-                Name::new("僵尸血量数值"),
-            ));
+                    label,
+                );
+            }
         });
+        zombie_count += 1;
     }
+}
+
+fn ensure_zombie_debug_children(
+    mut commands: Commands,
+    debug: Res<DebugRenderContext>,
+    assets: Option<Res<GameAssets>>,
+    theme: Option<Res<UiTheme>>,
+    catalog: Res<ContentCatalog>,
+    zombies: Query<
+        (Entity, &ZombieKind, &Health, Option<&EquipmentHealth>),
+        (With<Zombie>, Without<ZombieDebugOverlaySpawned>),
+    >,
+) {
+    if !debug.enabled {
+        return;
+    }
+
+    let fallback_theme = UiTheme::default();
+    let label = theme
+        .as_ref()
+        .map(|theme| &theme.zombie_label)
+        .unwrap_or(&fallback_theme.zombie_label);
+    let font = assets
+        .as_ref()
+        .map(|assets| assets.chinese_font.clone())
+        .unwrap_or_default();
+
+    for (entity, kind, health, equipment) in &zombies {
+        let definition = catalog.zombie(*kind);
+        let full_health = health.max + equipment.map_or(0.0, |item| item.max);
+        commands
+            .entity(entity)
+            .insert(ZombieDebugOverlaySpawned)
+            .with_children(|parent| {
+                spawn_zombie_debug_overlay(
+                    parent,
+                    definition.scene_label,
+                    full_health,
+                    font.clone(),
+                    label,
+                );
+            });
+    }
+}
+
+fn spawn_zombie_debug_overlay(
+    parent: &mut ChildSpawnerCommands,
+    scene_label: &str,
+    full_health: f32,
+    font: Handle<Font>,
+    label: &SceneLabelStyle,
+) {
+    parent.spawn((
+        Text2d::new(scene_label),
+        TextFont {
+            font: font.clone(),
+            font_size: label.font_size,
+            ..default()
+        },
+        TextColor(label.text),
+        TextBackgroundColor(label.background),
+        TextLayout::new_with_justify(Justify::Center),
+        Transform::from_xyz(label.offset.x, label.offset.y, 3.0),
+        Visibility::Hidden,
+        ZombieNameText,
+        Name::new("僵尸名称"),
+    ));
+    parent.spawn((
+        Sprite::from_color(Color::srgba(0.04, 0.04, 0.04, 0.9), Vec2::new(62.0, 10.0)),
+        Transform::from_xyz(0.0, 49.0, 4.0),
+        Visibility::Hidden,
+        ZombieHealthBarBackground,
+        Name::new("僵尸血条背景"),
+    ));
+    parent.spawn((
+        Sprite::from_color(Color::srgb(0.2, 0.9, 0.18), Vec2::new(58.0, 6.0)),
+        Transform::from_xyz(0.0, 49.0, 4.1),
+        Visibility::Hidden,
+        ZombieHealthBarFill,
+        Name::new("僵尸血条"),
+    ));
+    parent.spawn((
+        Text2d::new(format!("{full_health:.0} / {full_health:.0}")),
+        TextFont {
+            font,
+            font_size: 9.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Transform::from_xyz(0.0, 63.0, 4.2),
+        Visibility::Hidden,
+        ZombieHealthText,
+        Name::new("僵尸血量数值"),
+    ));
 }
 
 /// 物理 debug 渲染开启时，同步显示僵尸的实时血量数值和血条。
 fn update_zombie_health_debug(
     debug: Res<DebugRenderContext>,
-    zombies: Query<(&Health, Option<&EquipmentHealth>, &Children), With<Zombie>>,
+    zombies: Query<
+        (Ref<Health>, Option<Ref<EquipmentHealth>>, &Children),
+        (With<Zombie>, With<ZombieDebugOverlaySpawned>),
+    >,
     mut texts: Query<(&mut Text2d, &mut Visibility), ZombieHealthTextFilter>,
     mut fills: Query<(&mut Sprite, &mut Transform, &mut Visibility), ZombieHealthFillFilter>,
     mut backgrounds: Query<&mut Visibility, ZombieHealthBackgroundFilter>,
     mut name_texts: Query<&mut Visibility, ZombieNameTextFilter>,
 ) {
+    if !debug.enabled && !debug.is_changed() {
+        return;
+    }
+
     let visibility = if debug.enabled {
         Visibility::Visible
     } else {
         Visibility::Hidden
     };
     for (health, equipment, children) in &zombies {
-        let equipment_current = equipment.map(|item| item.current).unwrap_or(0.0);
-        let equipment_max = equipment.map(|item| item.max).unwrap_or(0.0);
+        let should_refresh = debug.is_changed()
+            || health.is_changed()
+            || equipment.as_ref().is_some_and(|item| item.is_changed());
+        if !should_refresh {
+            continue;
+        }
+
+        let equipment_current = equipment.as_ref().map(|item| item.current).unwrap_or(0.0);
+        let equipment_max = equipment.as_ref().map(|item| item.max).unwrap_or(0.0);
         let current = health.current + equipment_current;
         let max = health.max + equipment_max;
         let ratio = (current / max).clamp(0.0, 1.0);
         for child in children.iter() {
             if let Ok((mut text, mut child_visibility)) = texts.get_mut(child) {
-                text.0 = if equipment_max > 0.0 {
-                    format!("{current:.0} / {max:.0}  装备 {equipment_current:.0}")
-                } else {
-                    format!("{current:.0} / {max:.0}")
-                };
+                if debug.enabled {
+                    text.0 = if equipment_max > 0.0 {
+                        format!("{current:.0} / {max:.0}  装备 {equipment_current:.0}")
+                    } else {
+                        format!("{current:.0} / {max:.0}")
+                    };
+                }
                 *child_visibility = visibility;
             }
             if let Ok((mut sprite, mut transform, mut child_visibility)) = fills.get_mut(child) {
-                let width = 58.0 * ratio;
-                sprite.custom_size = Some(Vec2::new(width, 6.0));
-                sprite.color = if ratio > 0.5 {
-                    Color::srgb(0.2, 0.9, 0.18)
-                } else if ratio > 0.25 {
-                    Color::srgb(0.95, 0.72, 0.12)
-                } else {
-                    Color::srgb(0.92, 0.18, 0.12)
-                };
-                transform.translation.x = (width - 58.0) * 0.5;
+                if debug.enabled {
+                    let width = 58.0 * ratio;
+                    sprite.custom_size = Some(Vec2::new(width, 6.0));
+                    sprite.color = if ratio > 0.5 {
+                        Color::srgb(0.2, 0.9, 0.18)
+                    } else if ratio > 0.25 {
+                        Color::srgb(0.95, 0.72, 0.12)
+                    } else {
+                        Color::srgb(0.92, 0.18, 0.12)
+                    };
+                    transform.translation.x = (width - 58.0) * 0.5;
+                }
                 *child_visibility = visibility;
             }
             if let Ok(mut child_visibility) = backgrounds.get_mut(child) {
@@ -328,11 +429,17 @@ fn update_zombie_health_debug(
 
 /// 装备血量耗尽后隐藏对应的模型部件。
 fn update_zombie_equipment_parts(
-    zombies: Query<(&Children, Option<&EquipmentHealth>), With<Zombie>>,
+    zombies: Query<
+        (&Children, &EquipmentHealth),
+        (
+            With<Zombie>,
+            Or<(Added<EquipmentHealth>, Changed<EquipmentHealth>)>,
+        ),
+    >,
     mut equipment_parts: Query<&mut Visibility, With<ZombieEquipmentPart>>,
 ) {
     for (children, equipment) in &zombies {
-        let visibility = if equipment.is_some_and(|equipment| !equipment.is_broken()) {
+        let visibility = if !equipment.is_broken() {
             Visibility::Visible
         } else {
             Visibility::Hidden
@@ -352,24 +459,40 @@ fn update_zombie_equipment_parts(
 fn update_zombie_state(
     mut zombies: Query<(&Zombie, &Transform, &mut ZombieState)>,
     plants: Query<(Entity, &Transform, &GridCell), With<Plant>>,
+    mut plant_x_index: Local<Vec<(f32, Entity)>>,
 ) {
-    for (zombie, zombie_transform, mut state) in &mut zombies {
-        let zombie_x = zombie_transform.translation.x;
-        let blocker = plants
+    plant_x_index.clear();
+    plant_x_index.extend(
+        plants
             .iter()
             .filter(|(_, _, cell)| cell.is_ground())
-            .filter_map(|(entity, plant_transform, _)| {
-                let distance = zombie_x - plant_transform.translation.x;
+            .map(|(entity, transform, _)| (transform.translation.x, entity)),
+    );
+    plant_x_index.sort_unstable_by(|left, right| left.0.total_cmp(&right.0));
+
+    for (zombie, zombie_transform, mut state) in &mut zombies {
+        let zombie_x = zombie_transform.translation.x;
+        let first =
+            plant_x_index.partition_point(|(plant_x, _)| *plant_x < zombie_x - zombie.engage_max);
+        let last =
+            plant_x_index.partition_point(|(plant_x, _)| *plant_x <= zombie_x - zombie.engage_min);
+        let blocker = plant_x_index[first..last]
+            .iter()
+            .filter_map(|(plant_x, entity)| {
+                let distance = zombie_x - *plant_x;
                 (zombie.engage_min..=zombie.engage_max)
                     .contains(&distance)
-                    .then_some((distance.abs(), entity))
+                    .then_some((distance.abs(), *entity))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0))
             .map(|(_, entity)| entity);
 
-        *state = blocker
+        let next_state = blocker
             .map(|target| ZombieState::Eating { target })
             .unwrap_or(ZombieState::Walking);
+        if *state != next_state {
+            *state = next_state;
+        }
     }
 }
 

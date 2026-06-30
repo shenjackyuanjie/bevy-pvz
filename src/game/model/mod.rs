@@ -6,7 +6,7 @@ mod plant;
 mod zombie;
 
 pub use plant::plant_model_parts;
-pub use zombie::zombie_model_parts;
+pub use zombie::{ZombieModelDetail, zombie_model_parts, zombie_model_parts_with_detail};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ModelBounds {

@@ -373,6 +373,11 @@ fn fire_ready_shooters(
     zombies: Query<&Transform, With<Zombie>>,
     mut spawn: MessageWriter<SpawnProjectile>,
 ) {
+    let rightmost_zombie_x = zombies
+        .iter()
+        .map(|transform| transform.translation.x)
+        .max_by(|left, right| left.total_cmp(right));
+
     for (entity, transform, cell, mut shooter, mut timer) in &mut shooters {
         let (origin, route) = shooter_projectile_route(
             &layout,
@@ -399,9 +404,7 @@ fn fire_ready_shooters(
             ProjectileRoute::Direct => origin.x,
             ProjectileRoute::LeftEdgePath { turn_x, .. } => turn_x,
         };
-        let has_target = zombies
-            .iter()
-            .any(|zombie_transform| zombie_transform.translation.x > target_origin_x);
+        let has_target = rightmost_zombie_x.is_some_and(|zombie_x| zombie_x > target_origin_x);
         if shooter_should_fire(definition.always_shoot, has_target) && timer.0.just_finished() {
             spawn.write(SpawnProjectile {
                 owner: entity,

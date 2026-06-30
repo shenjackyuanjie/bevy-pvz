@@ -43,6 +43,7 @@ const ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY: Vec2 = Vec2::new(0.0, -20.0);
 const ROW_THREE_PHYSICS_LINE_X_JITTER: f32 = 2.0;
 const PHYSICS_PROJECTILE_RADIUS_SCALE: f32 = 0.75;
 const PHYSICS_PROJECTILE_CLEANUP_PADDING: f32 = 320.0;
+const PROJECTILE_SIMPLIFICATION_THRESHOLD: usize = 300;
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
 pub struct ProjectilePlugin;
@@ -164,6 +165,12 @@ struct ProjectileFill;
 #[derive(Component)]
 struct ProjectileAdornment;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum ProjectileRenderDetail {
+    Full,
+    Simplified,
+}
+
 #[derive(Clone, Copy)]
 struct ProjectileAdornmentPart {
     name: &'static str,
@@ -259,7 +266,7 @@ type IgnitableProjectileItem<'a> = (
     &'a mut Mesh2d,
     &'a mut MeshMaterial2d<ColorMaterial>,
     &'a ProjectileRadius,
-    &'a Children,
+    Option<&'a Children>,
 );
 type ProjectileFillItem<'a> = (&'a mut Mesh2d, &'a mut MeshMaterial2d<ColorMaterial>);
 type ProjectileFillFilter = (With<ProjectileFill>, Without<Projectile>);
@@ -299,7 +306,9 @@ fn spawn_projectiles(
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut render_assets: ResMut<ProjectileRenderAssets>,
     mut requests: MessageReader<SpawnProjectile>,
+    projectiles: Query<(), With<Projectile>>,
 ) {
+    let mut projectile_count = projectiles.iter().len();
     for request in requests.read() {
         let definition = catalog.projectile(request.kind);
         let radius = match definition.motion {
@@ -317,11 +326,16 @@ fn spawn_projectiles(
             &mut materials,
             &mut render_assets,
         );
+        let render_detail = projectile_render_detail(projectile_count);
+        let root_material = match render_detail {
+            ProjectileRenderDetail::Full => render.border_material.clone(),
+            ProjectileRenderDetail::Simplified => render.fill_material.clone(),
+        };
 
         // 共享基础组件：圆形描边、变换、Projectile 核心组件和命中注册表等
         let base = (
-            Mesh2d(render.border_mesh),
-            MeshMaterial2d(render.border_material),
+            Mesh2d(render.border_mesh.clone()),
+            MeshMaterial2d(root_material),
             Transform::from_translation(request.origin.extend(3.0)),
             Projectile {
                 owner: request.owner,
@@ -333,7 +347,7 @@ fn spawn_projectiles(
             HitRegistry::default(),
             TorchwoodRegistry::default(),
             LevelEntity,
-            Name::new(format!("{:?}", request.kind)),
+            Name::new(projectile_name(request.kind, false)),
         );
 
         let mut projectile = match definition.motion {
@@ -374,7 +388,9 @@ fn spawn_projectiles(
                 Restitution::coefficient(restitution),
                 Friction::coefficient(friction),
                 GravityScale(gravity_scale),
-                Ccd { enabled: ccd },
+                Ccd {
+                    enabled: ccd && render_detail == ProjectileRenderDetail::Full,
+                },
                 ActiveEvents::COLLISION_EVENTS,
                 physics_projectile_groups(),
             )),
@@ -393,17 +409,50 @@ fn spawn_projectiles(
                 after_arrival,
             });
         }
-        projectile.with_child((
-            Mesh2d(render.fill_mesh),
-            MeshMaterial2d(render.fill_material),
-            Transform::from_xyz(0.0, 0.0, 0.1),
-            ProjectileFill,
-            Name::new("Projectile fill"),
-        ));
-        projectile.with_children(|parent| {
-            spawn_projectile_adornments(parent, request.kind, visual_scale);
-        });
+        if render_detail == ProjectileRenderDetail::Full {
+            spawn_projectile_render_children(&mut projectile, &render, request.kind, visual_scale);
+        }
+        projectile_count += 1;
     }
+}
+
+fn projectile_render_detail(projectile_count: usize) -> ProjectileRenderDetail {
+    if projectile_count >= PROJECTILE_SIMPLIFICATION_THRESHOLD {
+        ProjectileRenderDetail::Simplified
+    } else {
+        ProjectileRenderDetail::Full
+    }
+}
+
+fn projectile_name(kind: ProjectileKind, physics: bool) -> &'static str {
+    match (kind, physics) {
+        (ProjectileKind::Pea, false) => "Pea",
+        (ProjectileKind::IcePea, false) => "IcePea",
+        (ProjectileKind::FirePea, false) => "FirePea",
+        (ProjectileKind::PhysicsPea, false) => "PhysicsPea",
+        (ProjectileKind::Pea, true) => "Pea physics",
+        (ProjectileKind::IcePea, true) => "IcePea physics",
+        (ProjectileKind::FirePea, true) => "FirePea physics",
+        (ProjectileKind::PhysicsPea, true) => "PhysicsPea physics",
+    }
+}
+
+fn spawn_projectile_render_children(
+    projectile: &mut EntityCommands,
+    render: &ProjectileRenderAssetSet,
+    kind: ProjectileKind,
+    visual_scale: f32,
+) {
+    projectile.with_child((
+        Mesh2d(render.fill_mesh.clone()),
+        MeshMaterial2d(render.fill_material.clone()),
+        Transform::from_xyz(0.0, 0.0, 0.1),
+        ProjectileFill,
+        Name::new("Projectile fill"),
+    ));
+    projectile.with_children(|parent| {
+        spawn_projectile_adornments(parent, kind, visual_scale);
+    });
 }
 
 fn spawn_projectile_adornments(
@@ -539,6 +588,7 @@ fn advance_path_projectiles(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut render_assets: ResMut<ProjectileRenderAssets>,
+    projectile_count: Query<(), With<Projectile>>,
     mut projectiles: Query<
         (
             Entity,
@@ -552,6 +602,7 @@ fn advance_path_projectiles(
         With<Projectile>,
     >,
 ) {
+    let mut total_projectiles = projectile_count.iter().len();
     for (entity, mut transform, projectile, kind, mut velocity, mut previous, route) in
         &mut projectiles
     {
@@ -578,6 +629,7 @@ fn advance_path_projectiles(
                 projectile,
                 *kind,
                 time.elapsed_secs(),
+                &mut total_projectiles,
             );
             commands.entity(entity).despawn();
         }
@@ -644,6 +696,7 @@ fn spawn_row_three_physics_line(
     source: &Projectile,
     kind: ProjectileKind,
     spawn_seconds: f32,
+    projectile_count: &mut usize,
 ) {
     let radius = physics_projectile_radius(catalog.projectile(kind).radius);
     let y = layout
@@ -661,6 +714,7 @@ fn spawn_row_three_physics_line(
             index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32
         };
         let x = left + (right - left) * t + row_three_physics_line_x_offset(index, spawn_seconds);
+        let render_detail = projectile_render_detail(*projectile_count);
         spawn_physics_projectile_entity(
             commands,
             catalog,
@@ -675,7 +729,9 @@ fn spawn_row_three_physics_line(
                 origin: Vec2::new(x, y),
                 velocity: ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY,
             },
+            render_detail,
         );
+        *projectile_count += 1;
     }
 }
 
@@ -732,6 +788,7 @@ fn spawn_physics_projectile_entity(
     materials: &mut Assets<ColorMaterial>,
     render_assets: &mut ProjectileRenderAssets,
     spec: PhysicsProjectileSpawnSpec,
+    render_detail: ProjectileRenderDetail,
 ) {
     let definition = catalog.projectile(spec.kind);
     let physics = physics_projectile_parameters(catalog);
@@ -739,9 +796,13 @@ fn spawn_physics_projectile_entity(
     let visual_scale = projectile_visual_scale(definition.radius, radius);
     let render =
         projectile_render_assets(spec.kind, radius, catalog, meshes, materials, render_assets);
+    let root_material = match render_detail {
+        ProjectileRenderDetail::Full => render.border_material.clone(),
+        ProjectileRenderDetail::Simplified => render.fill_material.clone(),
+    };
     let base = (
-        Mesh2d(render.border_mesh),
-        MeshMaterial2d(render.border_material),
+        Mesh2d(render.border_mesh.clone()),
+        MeshMaterial2d(root_material),
         Transform::from_translation(spec.origin.extend(3.0)),
         Projectile {
             owner: spec.owner,
@@ -753,7 +814,7 @@ fn spawn_physics_projectile_entity(
         HitRegistry::default(),
         TorchwoodRegistry::default(),
         LevelEntity,
-        Name::new(format!("{:?} physics", spec.kind)),
+        Name::new(projectile_name(spec.kind, true)),
     );
     let physics = (
         ProjectileMotion::Physics,
@@ -768,22 +829,15 @@ fn spawn_physics_projectile_entity(
         Friction::coefficient(physics.friction),
         GravityScale(physics.gravity_scale),
         Ccd {
-            enabled: physics.ccd,
+            enabled: physics.ccd && render_detail == ProjectileRenderDetail::Full,
         },
         ActiveEvents::COLLISION_EVENTS,
         physics_projectile_groups(),
     );
     let mut projectile = commands.spawn((base, physics));
-    projectile.with_child((
-        Mesh2d(render.fill_mesh),
-        MeshMaterial2d(render.fill_material),
-        Transform::from_xyz(0.0, 0.0, 0.1),
-        ProjectileFill,
-        Name::new("Projectile fill"),
-    ));
-    projectile.with_children(|parent| {
-        spawn_projectile_adornments(parent, spec.kind, visual_scale);
-    });
+    if render_detail == ProjectileRenderDetail::Full {
+        spawn_projectile_render_children(&mut projectile, &render, spec.kind, visual_scale);
+    }
 }
 
 /// 路径豌豆使用扫掠检测穿过火炬上半部，不依赖 Rapier 碰撞事件。
@@ -855,7 +909,7 @@ fn apply_projectile_ignitions(
         if !converted.insert(request.0) {
             continue;
         }
-        let Ok((mut projectile, mut kind, mut border_mesh, mut border_material, radius, children)) =
+        let Ok((mut projectile, mut kind, mut root_mesh, mut root_material, radius, children)) =
             params.projectiles.get_mut(request.0)
         else {
             continue;
@@ -877,19 +931,23 @@ fn apply_projectile_ignitions(
         );
         projectile.damage = output_damage;
         *kind = output_kind;
-        *border_mesh = Mesh2d(render.border_mesh);
-        *border_material = MeshMaterial2d(render.border_material);
-        for child in children.iter() {
-            if let Ok((mut fill_mesh, mut fill_material)) = params.fills.get_mut(child) {
-                *fill_mesh = Mesh2d(render.fill_mesh.clone());
-                *fill_material = MeshMaterial2d(render.fill_material.clone());
-            } else if params.adornments.contains(child) {
-                commands.entity(child).despawn();
+        *root_mesh = Mesh2d(render.border_mesh.clone());
+        if let Some(children) = children {
+            *root_material = MeshMaterial2d(render.border_material);
+            for child in children.iter() {
+                if let Ok((mut fill_mesh, mut fill_material)) = params.fills.get_mut(child) {
+                    *fill_mesh = Mesh2d(render.fill_mesh.clone());
+                    *fill_material = MeshMaterial2d(render.fill_material.clone());
+                } else if params.adornments.contains(child) {
+                    commands.entity(child).despawn();
+                }
             }
+            commands.entity(request.0).with_children(|parent| {
+                spawn_projectile_adornments(parent, output_kind, visual_scale);
+            });
+        } else {
+            *root_material = MeshMaterial2d(render.fill_material);
         }
-        commands.entity(request.0).with_children(|parent| {
-            spawn_projectile_adornments(parent, output_kind, visual_scale);
-        });
     }
 }
 
@@ -913,26 +971,57 @@ type PathProjectileData<'a> = (
 /// 路径弹丸 Query 过滤条件。
 type PathProjectileFilter = (With<Projectile>, With<PathVelocity>);
 
+#[derive(Clone, Copy)]
+struct ZombieCollisionSample {
+    entity: Entity,
+    center: Vec2,
+    half_size: Vec2,
+}
+
 /// 路径弹丸碰撞检测：对每个弹丸，扫掠其上一帧到当前位置的线段，
 /// 检测是否与道路上的僵尸发生碰撞（使用 swept_circle_hit_t 算法），取最近的命中。
 fn query_path_projectile_hits(
     projectiles: Query<PathProjectileData<'_>, PathProjectileFilter>,
     zombies: Query<(Entity, &Transform, &ColliderHalfSize, &ColliderCenterOffset), With<Zombie>>,
     mut hits: MessageWriter<ProjectileHit>,
+    mut zombie_index: Local<Vec<ZombieCollisionSample>>,
 ) {
+    zombie_index.clear();
+    zombie_index.extend(
+        zombies
+            .iter()
+            .map(
+                |(entity, transform, collider, collider_offset)| ZombieCollisionSample {
+                    entity,
+                    center: transform.translation.truncate() + collider_offset.0,
+                    half_size: collider.0,
+                },
+            ),
+    );
+    zombie_index.sort_unstable_by(|left, right| left.center.x.total_cmp(&right.center.x));
+    let max_half_width = zombie_index
+        .iter()
+        .map(|sample| sample.half_size.x)
+        .max_by(f32::total_cmp)
+        .unwrap_or(0.0);
+
     for (projectile, transform, previous, registry, radius) in &projectiles {
         let end = transform.translation.truncate();
         let mut nearest: Option<(f32, Entity)> = None;
+        let min_x = previous.0.x.min(end.x) - radius.0 - max_half_width;
+        let max_x = previous.0.x.max(end.x) + radius.0 + max_half_width;
+        let first = zombie_index.partition_point(|sample| sample.center.x < min_x);
+        let last = zombie_index.partition_point(|sample| sample.center.x <= max_x);
 
-        for (zombie, zombie_transform, collider, collider_offset) in &zombies {
-            if registry.0.contains(&zombie) {
+        for sample in &zombie_index[first..last] {
+            if registry.0.contains(&sample.entity) {
                 continue;
             }
-            let center = zombie_transform.translation.truncate() + collider_offset.0;
-            if let Some(t) = swept_circle_hit_t(previous.0, end, center, collider.0, radius.0)
+            if let Some(t) =
+                swept_circle_hit_t(previous.0, end, sample.center, sample.half_size, radius.0)
                 && nearest.is_none_or(|(best_t, _)| t < best_t)
             {
-                nearest = Some((t, zombie));
+                nearest = Some((t, sample.entity));
             }
         }
 
@@ -980,8 +1069,16 @@ fn resolve_projectile_hits(
     zombies: Query<(Entity, &Transform, &ZombieKind, Option<&EquipmentHealth>), With<Zombie>>,
     mut damage: MessageWriter<ApplyDamage>,
     mut consumed: Local<HashSet<Entity>>,
+    mut zombie_x_index: Local<Vec<(f32, Entity)>>,
 ) {
     consumed.clear();
+    zombie_x_index.clear();
+    zombie_x_index.extend(
+        zombies
+            .iter()
+            .map(|(entity, transform, _, _)| (transform.translation.x, entity)),
+    );
+    zombie_x_index.sort_unstable_by(|left, right| left.0.total_cmp(&right.0));
     for hit in hits.read() {
         if consumed.contains(&hit.projectile) {
             continue;
@@ -1017,7 +1114,14 @@ fn resolve_projectile_hits(
             && fire_splash_triggers(*primary_kind)
         {
             let impact = impact_transform.translation.truncate();
-            for (nearby, nearby_transform, nearby_kind, _) in &zombies {
+            let first =
+                zombie_x_index.partition_point(|(x, _)| *x < impact.x - FIRE_SPLASH_HALF_SIZE.x);
+            let last =
+                zombie_x_index.partition_point(|(x, _)| *x <= impact.x + FIRE_SPLASH_HALF_SIZE.x);
+            for (_, nearby) in &zombie_x_index[first..last] {
+                let Ok((nearby, nearby_transform, nearby_kind, _)) = zombies.get(*nearby) else {
+                    continue;
+                };
                 if nearby == hit.target || !fire_splash_affects(*nearby_kind) {
                     continue;
                 }

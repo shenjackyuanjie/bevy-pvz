@@ -6,7 +6,7 @@
 //! - `GROUP_1` — 植物（与僵尸、割草机碰撞）
 //! - `GROUP_2` — 僵尸（与物理弹丸碰撞）
 //! - `GROUP_3` — 普通弹丸（保留位，实际无碰撞体，逻辑命中检测）
-//! - `GROUP_4` — 物理弹丸（与僵尸、其他物理弹丸、世界边界碰撞）
+//! - `GROUP_4` — 物理弹丸（与僵尸、世界边界碰撞）
 //! - `GROUP_5` — 世界边界（与物理弹丸碰撞）
 //! - `GROUP_6` — 割草机（与植物相同过滤）
 
@@ -101,11 +101,14 @@ pub fn zombie_groups() -> CollisionGroups {
 
 /// 创建物理弹丸的碰撞组过滤配置。
 ///
-/// 物理弹丸与僵尸、其他物理弹丸以及世界边界发生碰撞。
+/// 物理弹丸与僵尸、世界边界以及火炬点燃区发生碰撞。
+///
+/// 弹丸之间不参与碰撞。高密度弹幕中，弹丸互撞会产生平方级的接触对，
+/// 而且不影响弹丸命中僵尸这一核心玩法。
 pub fn physics_projectile_groups() -> CollisionGroups {
     CollisionGroups::new(
         PHYSICS_PROJECTILE_GROUP,
-        ZOMBIE_GROUP | PHYSICS_PROJECTILE_GROUP | WORLD_BOUNDARY_GROUP | TORCHWOOD_GROUP,
+        ZOMBIE_GROUP | WORLD_BOUNDARY_GROUP | TORCHWOOD_GROUP,
     )
 }
 
