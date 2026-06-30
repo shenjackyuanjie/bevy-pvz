@@ -69,10 +69,15 @@ fn final_wave_is_spawned_before_outcome_check() {
 
 #[test]
 fn ron_level_is_complete_and_valid() {
-    LevelDefinition::load_from_file(DEFAULT_LEVEL_PATH)
-        .unwrap()
-        .validate(&ContentCatalog::default())
-        .unwrap();
+    for path in [
+        DEFAULT_LEVEL_PATH,
+        "assets/levels/level_row_three_physics_line.ron",
+    ] {
+        LevelDefinition::load_from_file(path)
+            .unwrap()
+            .validate(&ContentCatalog::default())
+            .unwrap();
+    }
 }
 
 #[test]
@@ -138,7 +143,7 @@ fn ron_wave_entries_are_relative_to_their_wave_start() {
 }
 
 #[test]
-fn ron_level_reads_always_shoot_option() {
+fn ron_level_reads_optional_rules() {
     let level = LevelDefinition::from_ron_str(
         r#"
         (
@@ -146,6 +151,8 @@ fn ron_level_reads_always_shoot_option() {
             display_name: "持续射击",
             starting_sun: 50,
             always_shoot: true,
+            pea_path_arrival_effect: RowThreePhysicsLine,
+            gatling_pea_upgrade_only: true,
             lawn: (
                 columns: 9,
                 cell_size: (90.0, 90.0),
@@ -169,6 +176,11 @@ fn ron_level_reads_always_shoot_option() {
     .unwrap();
 
     assert!(level.always_shoot);
+    assert_eq!(
+        level.pea_path_arrival_effect,
+        PeaPathArrivalEffect::RowThreePhysicsLine
+    );
+    assert!(level.gatling_pea_upgrade_only);
 }
 
 #[test]

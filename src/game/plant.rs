@@ -18,7 +18,9 @@ use crate::game::lawn::{CellOccupancy, GridCell, LawnLayout};
 use crate::game::level::{LevelDefinition, PlantCards, SpawnSun, SunBank};
 use crate::game::model::plant_model_parts;
 use crate::game::physics::{plant_groups, torchwood_groups};
-use crate::game::projectile::{ProjectileKind, ProjectileRoute, SpawnProjectile};
+use crate::game::projectile::{
+    PeaPathArrivalEffect, ProjectileKind, ProjectileRoute, SpawnProjectile,
+};
 use crate::game::schedule::GameSet;
 use crate::game::state::GameState;
 use crate::game::theme::UiTheme;
@@ -117,20 +119,33 @@ struct PlacePlantParams<'w, 's> {
     occupancy: ResMut<'w, CellOccupancy>,
     sun: ResMut<'w, SunBank>,
     cards: ResMut<'w, PlantCards>,
+    level: Res<'w, LevelDefinition>,
+    plants: Query<'w, 's, &'static PlantKind, With<Plant>>,
 }
 
 fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantRequest>) {
     for request in requests.read() {
         let definition = params.catalog.plant(request.kind);
-        if !plant_can_occupy(request.kind, request.cell)
-            || !params.occupancy.is_available(request.cell, &params.layout)
-            || !params.cards.ready(request.kind)
-            || !params.sun.try_spend(definition.price)
-        {
+        let occupied = params.occupancy.0.get(&request.cell).copied();
+        let occupied_kind = occupied.and_then(|entity| params.plants.get(entity).ok().copied());
+        let Some(placement) = plant_placement_target(
+            request.kind,
+            request.cell,
+            params.level.gatling_pea_upgrade_only,
+            &params.layout,
+            occupied,
+            occupied_kind,
+        ) else {
+            continue;
+        };
+        if !params.cards.ready(request.kind) || !params.sun.try_spend(definition.price) {
             continue;
         }
 
         params.cards.trigger(request.kind, &params.catalog);
+        if let PlantPlacement::Replace(replaced) = placement {
+            params.commands.entity(replaced).despawn();
+        }
         let position = params.layout.cell_center(request.cell);
         let label = &params.theme.plant_label;
         let font = params.assets.chinese_font.clone();
@@ -268,6 +283,31 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum PlantPlacement {
+    Empty,
+    Replace(Entity),
+}
+
+fn plant_placement_target(
+    kind: PlantKind,
+    cell: GridCell,
+    gatling_upgrade_only: bool,
+    layout: &LawnLayout,
+    occupied: Option<Entity>,
+    occupied_kind: Option<PlantKind>,
+) -> Option<PlantPlacement> {
+    if !plant_can_occupy(kind, cell) || !layout.contains(cell) {
+        return None;
+    }
+    if gatling_upgrade_only && kind == PlantKind::GatlingPea {
+        let entity = occupied?;
+        return (occupied_kind == Some(PlantKind::Repeater))
+            .then_some(PlantPlacement::Replace(entity));
+    }
+    occupied.is_none().then_some(PlantPlacement::Empty)
+}
+
 /// 空中格只接受向日葵，row 0 只接受坚果/火炬，row -1 只接受豌豆/火炬。
 fn plant_can_occupy(kind: PlantKind, cell: GridCell) -> bool {
     match kind {
@@ -330,6 +370,7 @@ fn fire_ready_shooters(
             *cell,
             transform.translation.truncate(),
             shooter.muzzle_offset,
+            definition.pea_path_arrival_effect,
         );
         timer.0.tick(time.delta());
         if shooter.remaining_burst_shots > 0 {
@@ -375,6 +416,7 @@ fn shooter_projectile_route(
     cell: GridCell,
     plant_position: Vec2,
     muzzle_offset: Vec2,
+    after_arrival: PeaPathArrivalEffect,
 ) -> (Vec2, ProjectileRoute) {
     if cell.is_peashooter_row() {
         (
@@ -382,6 +424,7 @@ fn shooter_projectile_route(
             ProjectileRoute::LeftEdgePath {
                 turn_x: layout.origin.x,
                 target_y: layout.path_y() + muzzle_offset.y,
+                after_arrival,
             },
         )
     } else {
@@ -466,7 +509,13 @@ mod tests {
         let muzzle = Vec2::new(36.0, 12.0);
         let lower = GridCell { column: 7, row: -1 };
         let plant_position = layout.cell_center(lower);
-        let (origin, route) = shooter_projectile_route(&layout, lower, plant_position, muzzle);
+        let (origin, route) = shooter_projectile_route(
+            &layout,
+            lower,
+            plant_position,
+            muzzle,
+            PeaPathArrivalEffect::Straight,
+        );
 
         assert_eq!(origin, plant_position + Vec2::new(-muzzle.x, muzzle.y));
         assert_eq!(
@@ -474,7 +523,46 @@ mod tests {
             ProjectileRoute::LeftEdgePath {
                 turn_x: layout.origin.x,
                 target_y: layout.path_y() + muzzle.y,
+                after_arrival: PeaPathArrivalEffect::Straight,
             }
+        );
+    }
+
+    #[test]
+    fn gatling_upgrade_only_requires_a_repeater_target() {
+        let layout = LawnLayout::default();
+        let cell = GridCell { column: 4, row: -1 };
+        let repeater = Entity::PLACEHOLDER;
+
+        assert_eq!(
+            plant_placement_target(PlantKind::GatlingPea, cell, true, &layout, None, None),
+            None
+        );
+        assert_eq!(
+            plant_placement_target(
+                PlantKind::GatlingPea,
+                cell,
+                true,
+                &layout,
+                Some(repeater),
+                Some(PlantKind::Peashooter),
+            ),
+            None
+        );
+        assert_eq!(
+            plant_placement_target(
+                PlantKind::GatlingPea,
+                cell,
+                true,
+                &layout,
+                Some(repeater),
+                Some(PlantKind::Repeater),
+            ),
+            Some(PlantPlacement::Replace(repeater))
+        );
+        assert_eq!(
+            plant_placement_target(PlantKind::GatlingPea, cell, false, &layout, None, None),
+            Some(PlantPlacement::Empty)
         );
     }
 

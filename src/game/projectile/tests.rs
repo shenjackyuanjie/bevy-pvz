@@ -34,9 +34,10 @@ fn left_route_moves_to_left_edge_then_up_then_right() {
         turn_x: -100.0,
         target_y: 40.0,
         phase: LeftEdgePathPhase::MoveLeft,
+        after_arrival: PeaPathArrivalEffect::Straight,
     };
     let mut velocity = Vec2::new(-430.0, 0.0);
-    let (position, previous) = advance_path_step(
+    let (position, previous, effect) = advance_path_step(
         Vec2::new(-95.0, -140.0),
         &mut velocity,
         0.1,
@@ -45,21 +46,76 @@ fn left_route_moves_to_left_edge_then_up_then_right() {
 
     assert_eq!(position, Vec2::new(-100.0, -140.0));
     assert_eq!(previous, Vec2::new(-95.0, -140.0));
+    assert_eq!(effect, None);
     assert_eq!(velocity, Vec2::new(0.0, 430.0));
     assert_eq!(route.phase, LeftEdgePathPhase::MoveUp);
 
-    let (position, previous) = advance_path_step(position, &mut velocity, 0.5, Some(&mut route));
+    let (position, previous, effect) =
+        advance_path_step(position, &mut velocity, 0.5, Some(&mut route));
 
     assert_eq!(position, Vec2::new(-100.0, 40.0));
     assert_eq!(previous, Vec2::new(-100.0, -140.0));
+    assert_eq!(effect, None);
     assert_eq!(velocity, Vec2::new(430.0, 0.0));
     assert_eq!(route.phase, LeftEdgePathPhase::MoveRight);
 
-    let (position, previous) = advance_path_step(position, &mut velocity, 0.1, Some(&mut route));
+    let (position, previous, effect) =
+        advance_path_step(position, &mut velocity, 0.1, Some(&mut route));
 
     assert_eq!(position, Vec2::new(-57.0, 40.0));
     assert_eq!(previous, Vec2::new(-100.0, 40.0));
+    assert_eq!(effect, None);
     assert_eq!(velocity, Vec2::new(430.0, 0.0));
+}
+
+#[test]
+fn row_three_effect_turns_fire_pea_into_physics_fire_peas() {
+    let mut app = App::new();
+    app.insert_resource(Time::<Fixed>::from_hz(60.0))
+        .insert_resource(LawnLayout::default())
+        .init_resource::<ContentCatalog>()
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<ColorMaterial>>()
+        .init_resource::<ProjectileRenderAssets>()
+        .add_systems(FixedUpdate, advance_path_projectiles);
+    let layout = app.world().resource::<LawnLayout>().clone();
+    let source = app
+        .world_mut()
+        .spawn((
+            Transform::from_translation(Vec2::new(layout.origin.x, layout.path_y()).extend(3.0)),
+            Projectile {
+                owner: Entity::PLACEHOLDER,
+                team: Team::Plants,
+                damage: 40.0,
+            },
+            ProjectileKind::FirePea,
+            ProjectileRadius(9.0),
+            HitRegistry::default(),
+            TorchwoodRegistry::default(),
+            PathVelocity(Vec2::new(0.0, 430.0)),
+            PreviousPosition(Vec2::new(layout.origin.x, layout.path_y())),
+            LeftEdgePath {
+                turn_x: layout.origin.x,
+                target_y: layout.path_y(),
+                phase: LeftEdgePathPhase::MoveUp,
+                after_arrival: PeaPathArrivalEffect::RowThreePhysicsLine,
+            },
+        ))
+        .id();
+
+    app.world_mut().run_schedule(FixedUpdate);
+
+    assert!(app.world().get_entity(source).is_err());
+    let world = app.world_mut();
+    let mut query = world.query::<(&ProjectileKind, &ProjectileMotion, &Projectile)>();
+    let spawned: Vec<_> = query
+        .iter(world)
+        .map(|(kind, motion, projectile)| (*kind, *motion, projectile.damage))
+        .collect();
+    assert_eq!(spawned.len(), ROW_THREE_PHYSICS_LINE_COUNT);
+    assert!(spawned.iter().all(|(kind, motion, damage)| {
+        *kind == ProjectileKind::FirePea && *motion == ProjectileMotion::Physics && *damage == 40.0
+    }));
 }
 
 #[test]

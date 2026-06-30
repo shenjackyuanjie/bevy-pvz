@@ -11,6 +11,8 @@
     display_name: "前院防线",
     starting_sun: 250,
     always_shoot: true,
+    pea_path_arrival_effect: Straight,
+    gatling_pea_upgrade_only: false,
     lawn: (
         columns: 9,
         cell_size: (90.0, 90.0),
@@ -40,12 +42,29 @@
 - `display_name`: 显示名称，不能为空。
 - `starting_sun`: 开局太阳数。
 - `always_shoot`: 是否让射手植物无论前方是否有僵尸都持续射击。省略时默认为 `false`。
+- `pea_path_arrival_effect`: 底排豌豆到达 row 0 最左侧后的行为。省略时默认为 `Straight`。
+- `gatling_pea_upgrade_only`: 是否让机枪射手只能替换已种下的多发射手，不能直接种在空格上。省略时默认为 `false`。
 - `lawn.columns`: 底层草坪列数。
 - `lawn.cell_size`: 单格宽高，单位是世界像素。
 - `lawn.center_x`: 草坪整体中心 X。
 - `lawn.path_y`: 僵尸行进道路中心 Y。
 - `cards`: 可选植物卡片列表。`slot` 不能重复，`plant` 不能重复。
 - `waves`: 显式大波列表。每个数组元素是一大波。
+
+## pea_path_arrival_effect
+
+该字段用于把不同物理实验隔离成不同关卡。当前可用值：
+
+```ron
+Straight
+RowThreePhysicsLine
+```
+
+- `Straight`: 保留当前行为；底排豌豆向左到边界，再向上到 row 0，随后沿 row 0 向右飞行。
+- `RowThreePhysicsLine`: 到达 row 0 最左侧后销毁原路径豌豆，并在 row 3 高度从草坪最左到最右生成 20 个物理豌豆。生成物理豌豆会继承触发弹丸当前的 `ProjectileKind` 与伤害，因此已经穿过火炬的火豌豆会变成物理火豌豆。
+
+默认关卡 `level_01.ron` 使用 `Straight`。示例物理关卡
+`level_row_three_physics_line.ron` 保持同样的 12 波结构，但僵尸数量更多、间隔更短，用于观察物理豌豆铺场效果；该关卡也开启了 `gatling_pea_upgrade_only`。
 
 ## cards
 

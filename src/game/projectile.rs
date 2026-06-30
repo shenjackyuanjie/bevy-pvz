@@ -24,7 +24,7 @@ use crate::game::catalog::{ColliderHalfSize, ContentCatalog, ProjectileMotionDef
 use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Team};
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
-use crate::game::lawn::LawnLayout;
+use crate::game::lawn::{GridCell, LawnLayout};
 use crate::game::physics::physics_projectile_groups;
 use crate::game::plant::{TorchwoodFlameCollider, TorchwoodFlameZone};
 use crate::game::schedule::GameSet;
@@ -35,6 +35,9 @@ pub use crate::game::catalog::ProjectileKind;
 
 const FIRE_SPLASH_DAMAGE: f32 = 14.0;
 const FIRE_SPLASH_HALF_SIZE: Vec2 = Vec2::new(52.0, 36.0);
+const ROW_THREE_PHYSICS_LINE_COUNT: usize = 20;
+const ROW_THREE_PHYSICS_LINE_ROW: i8 = 3;
+const ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY: Vec2 = Vec2::new(0.0, -20.0);
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
 pub struct ProjectilePlugin;
@@ -115,12 +118,28 @@ struct PathVelocity(Vec2);
 #[derive(Component, Debug)]
 struct PreviousPosition(Vec2);
 
+/// 底排豌豆到达 row 0 最左侧后的后续效果。
+#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Deserialize)]
+pub enum PeaPathArrivalEffect {
+    /// 保持当前行为：沿 row 0 向右直行。
+    Straight,
+    /// 到达 row 0 后消失，并在 row 3 高度生成一横列物理豌豆。
+    RowThreePhysicsLine,
+}
+
+impl Default for PeaPathArrivalEffect {
+    fn default() -> Self {
+        Self::Straight
+    }
+}
+
 /// 底排豌豆沿左边界折返到道路的路线状态。
 #[derive(Component, Debug, Clone, Copy, PartialEq)]
 struct LeftEdgePath {
     turn_x: f32,
     target_y: f32,
     phase: LeftEdgePathPhase,
+    after_arrival: PeaPathArrivalEffect,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -195,7 +214,11 @@ pub struct SpawnProjectile {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProjectileRoute {
     Direct,
-    LeftEdgePath { turn_x: f32, target_y: f32 },
+    LeftEdgePath {
+        turn_x: f32,
+        target_y: f32,
+        after_arrival: PeaPathArrivalEffect,
+    },
 }
 
 /// 弹丸命中事件消息，由碰撞检测系统发出，[`resolve_projectile_hits`] 消费。
@@ -328,12 +351,17 @@ fn spawn_projectiles(
             )),
         };
         if matches!(definition.motion, ProjectileMotionDefinition::Path { .. })
-            && let ProjectileRoute::LeftEdgePath { turn_x, target_y } = request.route
+            && let ProjectileRoute::LeftEdgePath {
+                turn_x,
+                target_y,
+                after_arrival,
+            } = request.route
         {
             projectile.insert(LeftEdgePath {
                 turn_x,
                 target_y,
                 phase: LeftEdgePathPhase::MoveLeft,
+                after_arrival,
             });
         }
         projectile.with_child((
@@ -457,10 +485,19 @@ fn projectile_render_assets(
 
 /// 路径弹丸运动：底排弹丸先向左到边界，再向上到 row 0，最后向右飞行。
 fn advance_path_projectiles(
+    mut commands: Commands,
     time: Res<Time<Fixed>>,
+    layout: Res<LawnLayout>,
+    catalog: Res<ContentCatalog>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut render_assets: ResMut<ProjectileRenderAssets>,
     mut projectiles: Query<
         (
+            Entity,
             &mut Transform,
+            &Projectile,
+            &ProjectileKind,
             &mut PathVelocity,
             &mut PreviousPosition,
             Option<&mut LeftEdgePath>,
@@ -468,9 +505,11 @@ fn advance_path_projectiles(
         With<Projectile>,
     >,
 ) {
-    for (mut transform, mut velocity, mut previous, route) in &mut projectiles {
+    for (entity, mut transform, projectile, kind, mut velocity, mut previous, route) in
+        &mut projectiles
+    {
         let start = transform.translation.truncate();
-        let (next, previous_position) = advance_path_step(
+        let (next, previous_position, arrival_effect) = advance_path_step(
             start,
             &mut velocity.0,
             time.delta_secs(),
@@ -478,6 +517,22 @@ fn advance_path_projectiles(
         );
         transform.translation = next.extend(transform.translation.z);
         previous.0 = previous_position;
+        if matches!(
+            arrival_effect,
+            Some(PeaPathArrivalEffect::RowThreePhysicsLine)
+        ) {
+            spawn_row_three_physics_line(
+                &mut commands,
+                &layout,
+                &catalog,
+                &mut meshes,
+                &mut materials,
+                &mut render_assets,
+                projectile,
+                *kind,
+            );
+            commands.entity(entity).despawn();
+        }
     }
 }
 
@@ -486,7 +541,7 @@ fn advance_path_step(
     velocity: &mut Vec2,
     delta_seconds: f32,
     route: Option<&mut LeftEdgePath>,
-) -> (Vec2, Vec2) {
+) -> (Vec2, Vec2, Option<PeaPathArrivalEffect>) {
     let speed = velocity.length();
     if let Some(route) = route {
         match route.phase {
@@ -496,30 +551,177 @@ fn advance_path_step(
                 if next.x <= route.turn_x {
                     route.phase = LeftEdgePathPhase::MoveUp;
                     *velocity = Vec2::new(0.0, speed);
-                    (Vec2::new(route.turn_x, start.y), start)
+                    (Vec2::new(route.turn_x, start.y), start, None)
                 } else {
-                    (next, start)
+                    (next, start, None)
                 }
             }
             LeftEdgePathPhase::MoveUp => {
                 *velocity = Vec2::new(0.0, speed);
                 let next = start + *velocity * delta_seconds;
                 if next.y >= route.target_y {
-                    route.phase = LeftEdgePathPhase::MoveRight;
-                    *velocity = Vec2::new(speed, 0.0);
-                    (Vec2::new(route.turn_x, route.target_y), start)
+                    let arrival = Vec2::new(route.turn_x, route.target_y);
+                    match route.after_arrival {
+                        PeaPathArrivalEffect::Straight => {
+                            route.phase = LeftEdgePathPhase::MoveRight;
+                            *velocity = Vec2::new(speed, 0.0);
+                            (arrival, start, None)
+                        }
+                        effect => {
+                            *velocity = Vec2::ZERO;
+                            (arrival, start, Some(effect))
+                        }
+                    }
                 } else {
-                    (next, start)
+                    (next, start, None)
                 }
             }
             LeftEdgePathPhase::MoveRight => {
                 *velocity = Vec2::new(speed, 0.0);
-                (start + *velocity * delta_seconds, start)
+                (start + *velocity * delta_seconds, start, None)
             }
         }
     } else {
-        (start + *velocity * delta_seconds, start)
+        (start + *velocity * delta_seconds, start, None)
     }
+}
+
+fn spawn_row_three_physics_line(
+    commands: &mut Commands,
+    layout: &LawnLayout,
+    catalog: &ContentCatalog,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    render_assets: &mut ProjectileRenderAssets,
+    source: &Projectile,
+    kind: ProjectileKind,
+) {
+    let radius = catalog.projectile(kind).radius;
+    let y = layout
+        .cell_center(GridCell {
+            column: 0,
+            row: ROW_THREE_PHYSICS_LINE_ROW,
+        })
+        .y;
+    let left = layout.origin.x + radius;
+    let right = layout.right() - radius;
+    for index in 0..ROW_THREE_PHYSICS_LINE_COUNT {
+        let t = if ROW_THREE_PHYSICS_LINE_COUNT == 1 {
+            0.5
+        } else {
+            index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32
+        };
+        spawn_physics_projectile_entity(
+            commands,
+            catalog,
+            meshes,
+            materials,
+            render_assets,
+            PhysicsProjectileSpawnSpec {
+                owner: source.owner,
+                team: source.team,
+                kind,
+                damage: source.damage,
+                origin: Vec2::new(left + (right - left) * t, y),
+                velocity: ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY,
+            },
+        );
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PhysicsProjectileSpawnSpec {
+    owner: Entity,
+    team: Team,
+    kind: ProjectileKind,
+    damage: f32,
+    origin: Vec2,
+    velocity: Vec2,
+}
+
+#[derive(Clone, Copy)]
+struct PhysicsProjectileParameters {
+    gravity_scale: f32,
+    restitution: f32,
+    friction: f32,
+    ccd: bool,
+}
+
+fn physics_projectile_parameters(catalog: &ContentCatalog) -> PhysicsProjectileParameters {
+    let ProjectileMotionDefinition::Physics {
+        gravity_scale,
+        restitution,
+        friction,
+        ccd,
+        ..
+    } = catalog.projectile(ProjectileKind::PhysicsPea).motion
+    else {
+        unreachable!("PhysicsPea must use physics motion")
+    };
+    PhysicsProjectileParameters {
+        gravity_scale,
+        restitution,
+        friction,
+        ccd,
+    }
+}
+
+fn spawn_physics_projectile_entity(
+    commands: &mut Commands,
+    catalog: &ContentCatalog,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    render_assets: &mut ProjectileRenderAssets,
+    spec: PhysicsProjectileSpawnSpec,
+) {
+    let definition = catalog.projectile(spec.kind);
+    let physics = physics_projectile_parameters(catalog);
+    let render = projectile_render_assets(spec.kind, catalog, meshes, materials, render_assets);
+    let base = (
+        Mesh2d(render.border_mesh),
+        MeshMaterial2d(render.border_material),
+        Transform::from_translation(spec.origin.extend(3.0)),
+        Projectile {
+            owner: spec.owner,
+            team: spec.team,
+            damage: spec.damage,
+        },
+        spec.kind,
+        ProjectileRadius(definition.radius),
+        HitRegistry::default(),
+        TorchwoodRegistry::default(),
+        LevelEntity,
+        Name::new(format!("{:?} physics", spec.kind)),
+    );
+    let physics = (
+        ProjectileMotion::Physics,
+        HitPolicy {
+            destroy_on_hit: definition.hit_policy.destroy_on_hit,
+            remaining_pierces: definition.hit_policy.max_pierces,
+        },
+        RigidBody::Dynamic,
+        Collider::ball(definition.radius),
+        Velocity::linear(spec.velocity),
+        Restitution::coefficient(physics.restitution),
+        Friction::coefficient(physics.friction),
+        GravityScale(physics.gravity_scale),
+        Ccd {
+            enabled: physics.ccd,
+        },
+        ActiveEvents::COLLISION_EVENTS,
+        physics_projectile_groups(),
+    );
+    let mut projectile = commands.spawn((base, physics));
+    projectile.with_child((
+        Mesh2d(render.fill_mesh),
+        MeshMaterial2d(render.fill_material),
+        Transform::from_xyz(0.0, 0.0, 0.1),
+        ProjectileFill,
+        Name::new("Projectile fill"),
+    ));
+    projectile.with_children(|parent| {
+        spawn_projectile_adornments(parent, spec.kind);
+    });
 }
 
 /// 路径豌豆使用扫掠检测穿过火炬上半部，不依赖 Rapier 碰撞事件。

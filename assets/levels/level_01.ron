@@ -3,6 +3,8 @@
     display_name: "前院防线",
     starting_sun: 250,
     always_shoot: true,
+    pea_path_arrival_effect: Straight,
+    gatling_pea_upgrade_only: false,
     lawn: (
         columns: 9,
         cell_size: (90.0, 90.0),

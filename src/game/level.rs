@@ -23,6 +23,7 @@ use crate::game::controls::ControlBindings;
 use crate::game::lawn::{CellOccupancy, LawnLayout};
 use crate::game::pause::game_not_paused;
 use crate::game::plant::PlantKind;
+use crate::game::projectile::PeaPathArrivalEffect;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
@@ -143,6 +144,8 @@ pub struct LevelDefinition {
     pub display_name: String,
     pub starting_sun: u32,
     pub always_shoot: bool,
+    pub pea_path_arrival_effect: PeaPathArrivalEffect,
+    pub gatling_pea_upgrade_only: bool,
     pub lawn: LawnLayout,
     pub cards: Vec<PlantCardDefinition>,
     /// 保留波次边界的僵尸生成计划。
@@ -157,6 +160,10 @@ struct LevelConfig {
     starting_sun: u32,
     #[serde(default)]
     always_shoot: bool,
+    #[serde(default)]
+    pea_path_arrival_effect: PeaPathArrivalEffect,
+    #[serde(default)]
+    gatling_pea_upgrade_only: bool,
     lawn: LawnConfig,
     cards: Vec<PlantCardConfig>,
     waves: Vec<WaveConfig>,
@@ -240,6 +247,8 @@ impl LevelDefinition {
             display_name: config.display_name,
             starting_sun: config.starting_sun,
             always_shoot: config.always_shoot,
+            pea_path_arrival_effect: config.pea_path_arrival_effect,
+            gatling_pea_upgrade_only: config.gatling_pea_upgrade_only,
             lawn,
             cards,
             waves,
