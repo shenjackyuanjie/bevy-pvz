@@ -16,6 +16,7 @@ pub struct ModelPart {
     pub rotation: f32,
     pub z: f32,
     pub name: &'static str,
+    pub is_equipment: bool,
 }
 
 pub(super) fn part(
@@ -34,5 +35,21 @@ pub(super) fn part(
         rotation,
         z,
         name,
+        is_equipment: false,
+    }
+}
+
+pub(super) fn equipment_part(
+    name: &'static str,
+    color: Color,
+    size: Vec2,
+    offset: Vec2,
+    rotation: f32,
+    z: f32,
+    alpha: f32,
+) -> ModelPart {
+    ModelPart {
+        is_equipment: true,
+        ..part(name, color, size, offset, rotation, z, alpha)
     }
 }

@@ -15,7 +15,7 @@ use bevy_rapier2d::prelude::*;
 
 use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderHalfSize, ContentCatalog};
-use crate::game::combat::{ApplyDamage, DamageKind, Health, Team};
+use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Health, Team};
 use crate::game::lawn::{GridCell, LawnLayout};
 use crate::game::model::zombie_model_parts;
 use crate::game::physics::zombie_groups;
@@ -34,7 +34,8 @@ impl Plugin for ZombiePlugin {
         app.add_message::<SpawnZombie>()
             .add_systems(
                 Update,
-                update_zombie_health_debug.run_if(in_state(GameState::Playing)),
+                (update_zombie_health_debug, update_zombie_equipment_parts)
+                    .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
                 FixedUpdate,
@@ -93,6 +94,9 @@ struct ZombieHealthBarBackground;
 
 #[derive(Component)]
 struct ZombieNameText;
+
+#[derive(Component)]
+struct ZombieEquipmentPart;
 
 /// 用于避免同一系统中多组查询冲突的排除过滤。
 type ZombieHealthTextFilter = (
@@ -186,14 +190,20 @@ pub(crate) fn spawn_zombies(
                 Name::new(definition.display_name),
             ),
         ));
+        if let Some(equipment_health) = definition.equipment_health {
+            entity.insert(EquipmentHealth::new(equipment_health));
+        }
         entity.with_children(|parent| {
             for part in model_parts {
-                parent.spawn((
+                let mut child = parent.spawn((
                     Sprite::from_color(part.color, part.size),
                     Transform::from_xyz(part.offset.x, part.offset.y, part.z)
                         .with_rotation(Quat::from_rotation_z(part.rotation)),
                     Name::new(part.name),
                 ));
+                if part.is_equipment {
+                    child.insert(ZombieEquipmentPart);
+                }
             }
             parent.spawn((
                 Text2d::new(definition.scene_label),
@@ -224,11 +234,9 @@ pub(crate) fn spawn_zombies(
                 ZombieHealthBarFill,
                 Name::new("僵尸血条"),
             ));
+            let full_health = definition.health + definition.equipment_health.unwrap_or(0.0);
             parent.spawn((
-                Text2d::new(format!(
-                    "{:.0} / {:.0}",
-                    definition.health, definition.health
-                )),
+                Text2d::new(format!("{full_health:.0} / {full_health:.0}")),
                 TextFont {
                     font,
                     font_size: 9.0,
@@ -247,7 +255,7 @@ pub(crate) fn spawn_zombies(
 /// 物理 debug 渲染开启时，同步显示僵尸的实时血量数值和血条。
 fn update_zombie_health_debug(
     debug: Res<DebugRenderContext>,
-    zombies: Query<(&Health, &Children), With<Zombie>>,
+    zombies: Query<(&Health, Option<&EquipmentHealth>, &Children), With<Zombie>>,
     mut texts: Query<(&mut Text2d, &mut Visibility), ZombieHealthTextFilter>,
     mut fills: Query<(&mut Sprite, &mut Transform, &mut Visibility), ZombieHealthFillFilter>,
     mut backgrounds: Query<&mut Visibility, ZombieHealthBackgroundFilter>,
@@ -258,11 +266,19 @@ fn update_zombie_health_debug(
     } else {
         Visibility::Hidden
     };
-    for (health, children) in &zombies {
-        let ratio = (health.current / health.max).clamp(0.0, 1.0);
+    for (health, equipment, children) in &zombies {
+        let equipment_current = equipment.map(|item| item.current).unwrap_or(0.0);
+        let equipment_max = equipment.map(|item| item.max).unwrap_or(0.0);
+        let current = health.current + equipment_current;
+        let max = health.max + equipment_max;
+        let ratio = (current / max).clamp(0.0, 1.0);
         for child in children.iter() {
             if let Ok((mut text, mut child_visibility)) = texts.get_mut(child) {
-                text.0 = format!("{:.0} / {:.0}", health.current, health.max);
+                text.0 = if equipment_max > 0.0 {
+                    format!("{current:.0} / {max:.0}  装备 {equipment_current:.0}")
+                } else {
+                    format!("{current:.0} / {max:.0}")
+                };
                 *child_visibility = visibility;
             }
             if let Ok((mut sprite, mut transform, mut child_visibility)) = fills.get_mut(child) {
@@ -282,6 +298,25 @@ fn update_zombie_health_debug(
                 *child_visibility = visibility;
             }
             if let Ok(mut child_visibility) = name_texts.get_mut(child) {
+                *child_visibility = visibility;
+            }
+        }
+    }
+}
+
+/// 装备血量耗尽后隐藏对应的模型部件。
+fn update_zombie_equipment_parts(
+    zombies: Query<(&Children, Option<&EquipmentHealth>), With<Zombie>>,
+    mut equipment_parts: Query<&mut Visibility, With<ZombieEquipmentPart>>,
+) {
+    for (children, equipment) in &zombies {
+        let visibility = if equipment.is_some_and(|equipment| !equipment.is_broken()) {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        for child in children.iter() {
+            if let Ok(mut child_visibility) = equipment_parts.get_mut(child) {
                 *child_visibility = visibility;
             }
         }

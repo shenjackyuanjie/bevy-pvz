@@ -144,6 +144,7 @@ pub struct ZombieDefinition {
     pub display_name: &'static str,
     pub scene_label: &'static str,
     pub health: f32,
+    pub equipment_health: Option<f32>,
     pub speed: f32,
     pub attack_damage: f32,
     pub attack_interval: Duration,
@@ -438,20 +439,50 @@ impl Default for ContentCatalog {
 fn zombie_definition(
     kind: ZombieKind,
     display_name: &'static str,
-    health: f32,
+    total_health: f32,
 ) -> ZombieDefinition {
     let (speed, visual_size, collider_half_size) = match kind {
-        ZombieKind::Football => (28.0, Vec2::new(66.0, 88.0), Vec2::new(33.0, 44.0)),
-        ZombieKind::Newspaper => (20.0, Vec2::new(62.0, 82.0), Vec2::new(31.0, 41.0)),
-        ZombieKind::ScreenDoor => (14.0, Vec2::new(72.0, 86.0), Vec2::new(36.0, 43.0)),
-        ZombieKind::Zomboni => (12.0, Vec2::new(92.0, 64.0), Vec2::new(46.0, 32.0)),
+        ZombieKind::Flag => (19.0, Vec2::new(62.0, 88.0), Vec2::new(29.0, 41.0)),
+        ZombieKind::Conehead => (16.5, Vec2::new(60.0, 94.0), Vec2::new(29.0, 41.0)),
+        ZombieKind::PoleVaulting => (26.0, Vec2::new(74.0, 100.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::Buckethead => (15.5, Vec2::new(62.0, 96.0), Vec2::new(29.0, 41.0)),
+        ZombieKind::Newspaper => (22.0, Vec2::new(62.0, 82.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::ScreenDoor => (13.5, Vec2::new(76.0, 90.0), Vec2::new(36.0, 43.0)),
+        ZombieKind::Football => (30.0, Vec2::new(70.0, 92.0), Vec2::new(33.0, 44.0)),
+        ZombieKind::Dancing => (21.0, Vec2::new(68.0, 90.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::BackupDancer => (20.0, Vec2::new(60.0, 84.0), Vec2::new(29.0, 41.0)),
+        ZombieKind::Snorkel => (16.0, Vec2::new(66.0, 84.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::Zomboni => (11.0, Vec2::new(96.0, 66.0), Vec2::new(48.0, 33.0)),
+        ZombieKind::BobsledTeam => (18.0, Vec2::new(108.0, 70.0), Vec2::new(54.0, 35.0)),
+        ZombieKind::DolphinRider => (27.0, Vec2::new(88.0, 92.0), Vec2::new(38.0, 41.0)),
+        ZombieKind::JackInTheBox => (23.0, Vec2::new(66.0, 88.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::Balloon => (18.0, Vec2::new(64.0, 128.0), Vec2::new(29.0, 41.0)),
+        ZombieKind::Digger => (24.0, Vec2::new(70.0, 92.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::Pogo => (24.0, Vec2::new(68.0, 108.0), Vec2::new(31.0, 48.0)),
+        ZombieKind::Yeti => (18.5, Vec2::new(76.0, 98.0), Vec2::new(36.0, 47.0)),
+        ZombieKind::Bungee => (20.0, Vec2::new(70.0, 112.0), Vec2::new(32.0, 50.0)),
+        ZombieKind::Ladder => (18.0, Vec2::new(84.0, 92.0), Vec2::new(39.0, 43.0)),
+        ZombieKind::Catapult => (10.5, Vec2::new(108.0, 76.0), Vec2::new(54.0, 38.0)),
+        ZombieKind::Gargantuar => (9.0, Vec2::new(104.0, 140.0), Vec2::new(52.0, 70.0)),
+        ZombieKind::GigaGargantuar => (8.0, Vec2::new(110.0, 146.0), Vec2::new(55.0, 73.0)),
+        ZombieKind::Imp | ZombieKind::IZombieImp => {
+            (29.0, Vec2::new(42.0, 58.0), Vec2::new(21.0, 29.0))
+        }
+        ZombieKind::PeashooterZombie => (17.0, Vec2::new(64.0, 86.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::WallNutZombie => (12.0, Vec2::new(70.0, 88.0), Vec2::new(35.0, 43.0)),
+        ZombieKind::JalapenoZombie => (24.0, Vec2::new(64.0, 88.0), Vec2::new(31.0, 41.0)),
+        ZombieKind::GatlingPeaZombie => (16.0, Vec2::new(70.0, 88.0), Vec2::new(34.0, 43.0)),
+        ZombieKind::SquashZombie => (18.0, Vec2::new(70.0, 86.0), Vec2::new(34.0, 42.0)),
+        ZombieKind::TallNutZombie => (11.0, Vec2::new(76.0, 108.0), Vec2::new(38.0, 54.0)),
         _ => (17.0, Vec2::new(58.0, 82.0), Vec2::new(29.0, 41.0)),
     };
+    let equipment_health = zombie_equipment_health(kind, total_health);
     ZombieDefinition {
         kind,
         display_name,
         scene_label: "僵尸",
-        health,
+        health: total_health - equipment_health.unwrap_or(0.0),
+        equipment_health,
         speed,
         attack_damage: 20.0,
         attack_interval: Duration::from_secs(1),
@@ -463,6 +494,23 @@ fn zombie_definition(
         },
         collider_half_size,
     }
+}
+
+fn zombie_equipment_health(kind: ZombieKind, total_health: f32) -> Option<f32> {
+    let body_health = 200.0;
+    let equipment_health = match kind {
+        ZombieKind::Conehead
+        | ZombieKind::Buckethead
+        | ZombieKind::Newspaper
+        | ZombieKind::ScreenDoor
+        | ZombieKind::Football
+        | ZombieKind::Ladder
+        | ZombieKind::WallNutZombie
+        | ZombieKind::TallNutZombie => total_health - body_health,
+        ZombieKind::JackInTheBox => 140.0,
+        _ => return None,
+    };
+    (equipment_health > 0.0).then_some(equipment_health)
 }
 
 impl ContentCatalog {
@@ -555,6 +603,9 @@ impl ContentCatalog {
         }
         for zombie in &self.zombies {
             validate_positive("zombie health", zombie.health)?;
+            if let Some(equipment_health) = zombie.equipment_health {
+                validate_positive("zombie equipment health", equipment_health)?;
+            }
             validate_positive("zombie speed", zombie.speed)?;
             validate_positive("zombie attack damage", zombie.attack_damage)?;
             validate_size("zombie visual size", zombie.visual.size)?;
@@ -640,5 +691,34 @@ mod tests {
     #[test]
     fn built_in_catalog_is_complete_and_valid() {
         ContentCatalog::default().validate().unwrap();
+    }
+
+    #[test]
+    fn armored_zombies_split_equipment_from_body_health() {
+        let catalog = ContentCatalog::default();
+        assert_eq!(catalog.zombie(ZombieKind::Basic).equipment_health, None);
+
+        let conehead = catalog.zombie(ZombieKind::Conehead);
+        assert_eq!(conehead.health, 200.0);
+        assert_eq!(conehead.equipment_health, Some(360.0));
+
+        let buckethead = catalog.zombie(ZombieKind::Buckethead);
+        assert_eq!(buckethead.health, 200.0);
+        assert_eq!(buckethead.equipment_health, Some(1100.0));
+
+        let screen_door = catalog.zombie(ZombieKind::ScreenDoor);
+        assert_eq!(screen_door.health, 200.0);
+        assert_eq!(screen_door.equipment_health, Some(1100.0));
+    }
+
+    #[test]
+    fn zombie_kinds_use_distinct_speeds() {
+        let catalog = ContentCatalog::default();
+        let basic = catalog.zombie(ZombieKind::Basic).speed;
+        assert!(catalog.zombie(ZombieKind::Football).speed > basic);
+        assert!(catalog.zombie(ZombieKind::Imp).speed > basic);
+        assert!(catalog.zombie(ZombieKind::PoleVaulting).speed > basic);
+        assert!(catalog.zombie(ZombieKind::Gargantuar).speed < basic);
+        assert!(catalog.zombie(ZombieKind::Zomboni).speed < basic);
     }
 }

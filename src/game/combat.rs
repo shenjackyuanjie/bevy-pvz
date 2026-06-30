@@ -2,6 +2,7 @@
 //!
 //! 实现核心战斗数据模型与流程：
 //! - [`Health`]：生命值组件，支持伤害扣减与死亡判定
+//! - [`EquipmentHealth`]：独立装备血量，先于本体承受普通伤害
 //! - [`Team`]：阵营标记（植物/僵尸）
 //! - [`ApplyDamage`]：伤害请求消息，在 Combat 阶段处理
 //! - [`Dead`] / [`EntityDied`]：死亡标记与死亡通知，在 DeathAndCleanup 阶段处理
@@ -58,6 +59,34 @@ impl Health {
         self.current = (self.current - amount.max(0.0)).max(0.0);
         debug_assert!(self.current <= self.max);
         self.current == 0.0
+    }
+}
+
+/// 独立装备血量，适用于路障、铁桶、铁门等可先被打掉的防护件。
+#[derive(Component, Debug, Clone, Copy)]
+pub struct EquipmentHealth {
+    /// 当前装备血量，范围为 [0, max]。
+    pub current: f32,
+    /// 最大装备血量，也是初始值。
+    pub max: f32,
+}
+
+impl EquipmentHealth {
+    /// 创建一个满血装备。
+    pub fn new(max: f32) -> Self {
+        Self { current: max, max }
+    }
+
+    /// 让装备吸收伤害，返回未被装备吸收的溢出伤害。
+    pub fn absorb_damage(&mut self, amount: f32) -> f32 {
+        let amount = amount.max(0.0);
+        let absorbed = self.current.min(amount);
+        self.current -= absorbed;
+        amount - absorbed
+    }
+
+    pub fn is_broken(&self) -> bool {
+        self.current <= 0.0
     }
 }
 
@@ -126,16 +155,25 @@ pub struct Dead {
 pub(crate) fn apply_damage(
     mut commands: Commands,
     mut damage: MessageReader<ApplyDamage>,
-    mut targets: Query<&mut Health, Without<Dead>>,
+    mut targets: Query<(&mut Health, Option<&mut EquipmentHealth>), Without<Dead>>,
 ) {
     for hit in damage.read() {
-        let _kind = hit.kind;
-        if let Ok(mut health) = targets.get_mut(hit.target)
-            && health.damage(hit.amount)
-        {
-            commands
-                .entity(hit.target)
-                .insert(Dead { killer: hit.source });
+        if let Ok((mut health, equipment)) = targets.get_mut(hit.target) {
+            let remaining_damage = if matches!(hit.kind, DamageKind::Mower) {
+                hit.amount
+            } else if let Some(mut equipment) = equipment {
+                equipment.absorb_damage(hit.amount)
+            } else {
+                hit.amount
+            };
+            if remaining_damage <= 0.0 {
+                continue;
+            }
+            if health.damage(remaining_damage) {
+                commands
+                    .entity(hit.target)
+                    .insert(Dead { killer: hit.source });
+            }
         }
     }
 }
@@ -193,6 +231,69 @@ mod tests {
 
         app.update();
 
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 0.0);
+        assert!(app.world().get::<Dead>(target).is_some());
+    }
+
+    #[test]
+    fn equipment_absorbs_damage_before_body_health() {
+        let mut app = App::new();
+        app.add_message::<ApplyDamage>()
+            .add_systems(Update, apply_damage);
+        let target = app
+            .world_mut()
+            .spawn((
+                Health::new(100.0),
+                EquipmentHealth::new(50.0),
+                Team::Zombies,
+            ))
+            .id();
+        let source = Entity::PLACEHOLDER;
+        for amount in [30.0, 40.0] {
+            app.world_mut().write_message(ApplyDamage {
+                source,
+                target,
+                amount,
+                kind: DamageKind::Projectile,
+            });
+        }
+
+        app.update();
+
+        assert_eq!(
+            app.world().get::<EquipmentHealth>(target).unwrap().current,
+            0.0
+        );
+        assert_eq!(app.world().get::<Health>(target).unwrap().current, 80.0);
+        assert!(app.world().get::<Dead>(target).is_none());
+    }
+
+    #[test]
+    fn mower_damage_bypasses_equipment() {
+        let mut app = App::new();
+        app.add_message::<ApplyDamage>()
+            .add_systems(Update, apply_damage);
+        let target = app
+            .world_mut()
+            .spawn((
+                Health::new(100.0),
+                EquipmentHealth::new(50.0),
+                Team::Zombies,
+            ))
+            .id();
+        app.world_mut().write_message(ApplyDamage {
+            source: Entity::PLACEHOLDER,
+            target,
+            amount: 100.0,
+            kind: DamageKind::Mower,
+        });
+
+        app.update();
+
+        assert_eq!(
+            app.world().get::<EquipmentHealth>(target).unwrap().current,
+            50.0
+        );
         assert_eq!(app.world().get::<Health>(target).unwrap().current, 0.0);
         assert!(app.world().get::<Dead>(target).is_some());
     }
