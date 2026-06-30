@@ -15,6 +15,34 @@ WAVE_GROUPS = [
     (21, 25, "第 6 波：终局之战 — 压缩原第 22-25 波"),
 ]
 
+# Extra output-wave fillers for waves 4-6. Each entry is:
+# (start_fraction, span_fraction, kind, count).
+# They add staggered spawn frequencies without extending the target timeline.
+LATE_WAVE_FILLERS = {
+    3: [
+        (0.03, 0.90, "Basic", 24),
+        (0.11, 0.80, "Conehead", 18),
+        (0.18, 0.74, "Imp", 24),
+        (0.27, 0.62, "Newspaper", 12),
+        (0.36, 0.52, "Buckethead", 12),
+    ],
+    4: [
+        (0.03, 0.90, "Conehead", 32),
+        (0.09, 0.84, "Imp", 42),
+        (0.17, 0.75, "Buckethead", 22),
+        (0.26, 0.68, "Football", 14),
+        (0.35, 0.58, "ScreenDoor", 10),
+    ],
+    5: [
+        (0.02, 0.90, "Imp", 48),
+        (0.08, 0.84, "Conehead", 36),
+        (0.15, 0.80, "Buckethead", 26),
+        (0.24, 0.75, "Football", 18),
+        (0.33, 0.64, "Pogo", 12),
+        (0.41, 0.54, "Digger", 10),
+    ],
+}
+
 BASE_WAVES_CONFIG = [
     # (wave_delay, entries[(entry_delay, kind, count, interval)])
 
@@ -409,7 +437,29 @@ def grouped_scaled_waves_config(base_waves, wave_groups):
     return grouped, scale
 
 
+def add_late_wave_fillers(waves, filler_config):
+    filled = []
+    for wave_index, (delay, entries) in enumerate(waves):
+        entries = list(entries)
+        duration = wave_duration(entries)
+        for start_fraction, span_fraction, kind, count in filler_config.get(wave_index, []):
+            if not (0.0 <= start_fraction <= 1.0):
+                raise ValueError("filler start fraction must be in [0, 1]")
+            if span_fraction < 0.0 or start_fraction + span_fraction > 1.0:
+                raise ValueError("filler span must stay within the wave duration")
+            if count <= 0:
+                raise ValueError("filler count must be positive")
+
+            entry_delay = duration * start_fraction
+            interval = 0.0 if count == 1 else duration * span_fraction / (count - 1)
+            entries.append((entry_delay, kind, count, interval))
+        entries.sort(key=lambda entry: (entry[0], entry[1]))
+        filled.append((delay, entries))
+    return filled
+
+
 waves_config, time_scale = grouped_scaled_waves_config(BASE_WAVES_CONFIG, WAVE_GROUPS)
+waves_config = add_late_wave_fillers(waves_config, LATE_WAVE_FILLERS)
 
 # =============================================
 # Timing Analysis
