@@ -532,6 +532,7 @@ fn advance_path_projectiles(
                 &mut render_assets,
                 projectile,
                 *kind,
+                time.elapsed_secs(),
             );
             commands.entity(entity).despawn();
         }
@@ -597,6 +598,7 @@ fn spawn_row_three_physics_line(
     render_assets: &mut ProjectileRenderAssets,
     source: &Projectile,
     kind: ProjectileKind,
+    spawn_seconds: f32,
 ) {
     let radius = catalog.projectile(kind).radius;
     let y = layout
@@ -613,7 +615,7 @@ fn spawn_row_three_physics_line(
         } else {
             index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32
         };
-        let x = left + (right - left) * t + row_three_physics_line_x_offset(index);
+        let x = left + (right - left) * t + row_three_physics_line_x_offset(index, spawn_seconds);
         spawn_physics_projectile_entity(
             commands,
             catalog,
@@ -632,12 +634,13 @@ fn spawn_row_three_physics_line(
     }
 }
 
-fn row_three_physics_line_x_offset(index: usize) -> f32 {
-    if index % 2 == 0 {
-        -ROW_THREE_PHYSICS_LINE_X_JITTER
-    } else {
-        ROW_THREE_PHYSICS_LINE_X_JITTER
-    }
+fn row_three_physics_line_x_offset(index: usize, spawn_seconds: f32) -> f32 {
+    let mut bits = spawn_seconds.to_bits() ^ (index as u32).wrapping_mul(0x9E37_79B9);
+    bits ^= bits << 13;
+    bits ^= bits >> 17;
+    bits ^= bits << 5;
+    let normalized = bits as f32 / u32::MAX as f32;
+    (normalized * 2.0 - 1.0) * ROW_THREE_PHYSICS_LINE_X_JITTER
 }
 
 #[derive(Clone, Copy)]

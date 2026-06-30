@@ -131,14 +131,42 @@ fn row_three_effect_turns_fire_pea_into_physics_fire_peas() {
         .radius;
     let left = layout.origin.x + radius;
     let right = layout.right() - radius;
+    let mut offsets = Vec::with_capacity(spawned.len());
     for (index, (_kind, _motion, _damage, position)) in spawned.iter().enumerate() {
         let t = index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32;
-        let expected_x = left + (right - left) * t + row_three_physics_line_x_offset(index);
+        let base_x = left + (right - left) * t;
+        let offset = position.x - base_x;
         assert!(
-            (position.x - expected_x).abs() < 0.001,
-            "physics pea {index} should use staggered x offset"
+            offset.abs() <= ROW_THREE_PHYSICS_LINE_X_JITTER + 0.001,
+            "physics pea {index} x offset should stay within jitter bounds"
         );
+        offsets.push((offset * 1000.0).round() as i32);
     }
+    offsets.sort_unstable();
+    offsets.dedup();
+    assert_eq!(
+        offsets.len(),
+        ROW_THREE_PHYSICS_LINE_COUNT,
+        "row-three physics peas should each use a different x offset"
+    );
+}
+
+#[test]
+fn row_three_physics_line_offsets_change_with_spawn_time() {
+    let first: Vec<_> = (0..ROW_THREE_PHYSICS_LINE_COUNT)
+        .map(|index| row_three_physics_line_x_offset(index, 12.0))
+        .collect();
+    let second: Vec<_> = (0..ROW_THREE_PHYSICS_LINE_COUNT)
+        .map(|index| row_three_physics_line_x_offset(index, 12.25))
+        .collect();
+
+    assert_ne!(first, second);
+    assert!(
+        first
+            .iter()
+            .chain(second.iter())
+            .all(|offset| offset.abs() <= ROW_THREE_PHYSICS_LINE_X_JITTER)
+    );
 }
 
 #[test]
