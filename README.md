@@ -32,6 +32,13 @@ cargo run
 cargo run -- --debug
 ```
 
+指定关卡 RON：
+
+```powershell
+cargo run -- --level assets/levels/level_row_three_physics_line.ron
+cargo run -- -l assets/levels/level_row_three_physics_line.ron
+```
+
 启用了 Bevy `dynamic_linking` 以改善开发期增量编译体验，因此开发时应优先使用 `cargo run`，不要把裸 `target/debug/bevy-pvz.exe` 当作可分发版本。
 
 ### 操作
@@ -54,7 +61,7 @@ HUD 显示当前阳光、波次、击杀数、关卡时间、弹丸/僵尸数量
 
 ### 草坪与种植
 
-- 关卡从 `assets/levels/level_01.ron` 加载，修改后重新启动即可生效。
+- 默认关卡从 `assets/levels/level_01.ron` 加载，也可以通过 `--level` / `-l` 指定其他 RON。
 - 主草坪是一条 9 格道路；第 1 列和末尾 2 列上方各有 2 格空中草坪，共 6 格。
 - row `0` 只允许坚果或火炬树桩；row `-1` 留空；row `-2` 只允许三种豌豆射手或火炬树桩。
 - 底排豌豆先向左飞，到草坪左边界后传送到 row `0` 左端，再改为向右飞行。

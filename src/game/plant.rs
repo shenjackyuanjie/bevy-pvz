@@ -128,11 +128,14 @@ fn place_plants(mut params: PlacePlantParams, mut requests: MessageReader<PlantR
         let definition = params.catalog.plant(request.kind);
         let occupied = params.occupancy.0.get(&request.cell).copied();
         let occupied_kind = occupied.and_then(|entity| params.plants.get(entity).ok().copied());
+        let cell_in_layout = params.layout.contains(request.cell);
+        let cell_available = params.occupancy.is_available(request.cell, &params.layout);
         let Some(placement) = plant_placement_target(
             request.kind,
             request.cell,
             params.level.gatling_pea_upgrade_only,
-            &params.layout,
+            cell_in_layout,
+            cell_available,
             occupied,
             occupied_kind,
         ) else {
@@ -293,11 +296,12 @@ fn plant_placement_target(
     kind: PlantKind,
     cell: GridCell,
     gatling_upgrade_only: bool,
-    layout: &LawnLayout,
+    cell_in_layout: bool,
+    cell_available: bool,
     occupied: Option<Entity>,
     occupied_kind: Option<PlantKind>,
 ) -> Option<PlantPlacement> {
-    if !plant_can_occupy(kind, cell) || !layout.contains(cell) {
+    if !plant_can_occupy(kind, cell) || !cell_in_layout {
         return None;
     }
     if gatling_upgrade_only && kind == PlantKind::GatlingPea {
@@ -305,7 +309,7 @@ fn plant_placement_target(
         return (occupied_kind == Some(PlantKind::Repeater))
             .then_some(PlantPlacement::Replace(entity));
     }
-    occupied.is_none().then_some(PlantPlacement::Empty)
+    cell_available.then_some(PlantPlacement::Empty)
 }
 
 /// 空中格只接受向日葵，row 0 只接受坚果/火炬，row -1 只接受豌豆/火炬。
@@ -530,12 +534,11 @@ mod tests {
 
     #[test]
     fn gatling_upgrade_only_requires_a_repeater_target() {
-        let layout = LawnLayout::default();
         let cell = GridCell { column: 4, row: -1 };
         let repeater = Entity::PLACEHOLDER;
 
         assert_eq!(
-            plant_placement_target(PlantKind::GatlingPea, cell, true, &layout, None, None),
+            plant_placement_target(PlantKind::GatlingPea, cell, true, true, true, None, None),
             None
         );
         assert_eq!(
@@ -543,7 +546,8 @@ mod tests {
                 PlantKind::GatlingPea,
                 cell,
                 true,
-                &layout,
+                true,
+                false,
                 Some(repeater),
                 Some(PlantKind::Peashooter),
             ),
@@ -554,15 +558,20 @@ mod tests {
                 PlantKind::GatlingPea,
                 cell,
                 true,
-                &layout,
+                true,
+                false,
                 Some(repeater),
                 Some(PlantKind::Repeater),
             ),
             Some(PlantPlacement::Replace(repeater))
         );
         assert_eq!(
-            plant_placement_target(PlantKind::GatlingPea, cell, false, &layout, None, None),
+            plant_placement_target(PlantKind::GatlingPea, cell, false, true, true, None, None),
             Some(PlantPlacement::Empty)
+        );
+        assert_eq!(
+            plant_placement_target(PlantKind::GatlingPea, cell, false, true, false, None, None),
+            None
         );
     }
 

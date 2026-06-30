@@ -2,6 +2,11 @@
 
 `assets/levels/*.ron` 描述单个关卡。当前默认关卡由
 `src/game/level.rs` 中的 `DEFAULT_LEVEL_PATH` 指向 `level_01.ron`。
+启动时可以用 `--level` / `-l` 指定其他关卡：
+
+```powershell
+cargo run -- --level assets/levels/level_row_three_physics_line.ron
+```
 
 ## 顶层结构
 
