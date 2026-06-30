@@ -52,6 +52,10 @@ impl Plugin for GameUiPlugin {
 }
 
 #[derive(Component)]
+/// 游戏内 HUD 根节点。暂停调试图鉴显示时会隐藏它，避免 UI 盖住世界空间模型。
+pub struct GameHudRoot;
+
+#[derive(Component)]
 /// 标记顶部关卡数据文字，供每帧增量更新。
 struct HudStatsText;
 
@@ -155,7 +159,9 @@ fn setup_hud(
                 position_type: PositionType::Absolute,
                 ..default()
             },
+            Visibility::Visible,
             ZIndex(20),
+            GameHudRoot,
             LevelEntity,
             Name::new("游戏界面"),
         ))

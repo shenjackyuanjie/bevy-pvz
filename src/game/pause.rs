@@ -7,6 +7,7 @@ use crate::game::catalog::{ContentCatalog, PlantKind, ZombieKind};
 use crate::game::controls::ControlBindings;
 use crate::game::model::{plant_model_parts, zombie_model_parts};
 use crate::game::state::{GameState, LevelEntity};
+use crate::game::ui::GameHudRoot;
 
 pub struct PausePlugin;
 
@@ -19,7 +20,11 @@ impl Plugin for PausePlugin {
             )
             .add_systems(
                 Update,
-                (toggle_pause, sync_pause_debug_gallery)
+                (
+                    toggle_pause,
+                    sync_pause_hud_visibility,
+                    sync_pause_debug_gallery,
+                )
                     .chain()
                     .run_if(in_state(GameState::Playing)),
             )
@@ -116,6 +121,20 @@ fn sync_pause_debug_gallery(
         for entity in &gallery {
             commands.entity(entity).despawn();
         }
+    }
+}
+
+fn sync_pause_hud_visibility(
+    pause: Res<GamePause>,
+    mut roots: Query<&mut Visibility, With<GameHudRoot>>,
+) {
+    let visibility = if pause.paused {
+        Visibility::Hidden
+    } else {
+        Visibility::Visible
+    };
+    for mut root in &mut roots {
+        *root = visibility;
     }
 }
 
