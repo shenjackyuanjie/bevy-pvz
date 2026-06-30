@@ -38,6 +38,7 @@ const FIRE_SPLASH_HALF_SIZE: Vec2 = Vec2::new(52.0, 36.0);
 const ROW_THREE_PHYSICS_LINE_COUNT: usize = 20;
 const ROW_THREE_PHYSICS_LINE_ROW: i8 = 3;
 const ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY: Vec2 = Vec2::new(0.0, -20.0);
+const ROW_THREE_PHYSICS_LINE_X_JITTER: f32 = 2.0;
 const PHYSICS_PROJECTILE_CLEANUP_PADDING: f32 = 320.0;
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
@@ -612,6 +613,7 @@ fn spawn_row_three_physics_line(
         } else {
             index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32
         };
+        let x = left + (right - left) * t + row_three_physics_line_x_offset(index);
         spawn_physics_projectile_entity(
             commands,
             catalog,
@@ -623,10 +625,18 @@ fn spawn_row_three_physics_line(
                 team: source.team,
                 kind,
                 damage: source.damage,
-                origin: Vec2::new(left + (right - left) * t, y),
+                origin: Vec2::new(x, y),
                 velocity: ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY,
             },
         );
+    }
+}
+
+fn row_three_physics_line_x_offset(index: usize) -> f32 {
+    if index % 2 == 0 {
+        -ROW_THREE_PHYSICS_LINE_X_JITTER
+    } else {
+        ROW_THREE_PHYSICS_LINE_X_JITTER
     }
 }
 

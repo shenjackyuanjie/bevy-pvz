@@ -107,15 +107,38 @@ fn row_three_effect_turns_fire_pea_into_physics_fire_peas() {
 
     assert!(app.world().get_entity(source).is_err());
     let world = app.world_mut();
-    let mut query = world.query::<(&ProjectileKind, &ProjectileMotion, &Projectile)>();
-    let spawned: Vec<_> = query
+    let mut query = world.query::<(&ProjectileKind, &ProjectileMotion, &Projectile, &Transform)>();
+    let mut spawned: Vec<_> = query
         .iter(world)
-        .map(|(kind, motion, projectile)| (*kind, *motion, projectile.damage))
+        .map(|(kind, motion, projectile, transform)| {
+            (
+                *kind,
+                *motion,
+                projectile.damage,
+                transform.translation.truncate(),
+            )
+        })
         .collect();
     assert_eq!(spawned.len(), ROW_THREE_PHYSICS_LINE_COUNT);
-    assert!(spawned.iter().all(|(kind, motion, damage)| {
+    assert!(spawned.iter().all(|(kind, motion, damage, _position)| {
         *kind == ProjectileKind::FirePea && *motion == ProjectileMotion::Physics && *damage == 40.0
     }));
+    spawned.sort_by(|left, right| left.3.x.total_cmp(&right.3.x));
+
+    let radius = world
+        .resource::<ContentCatalog>()
+        .projectile(ProjectileKind::FirePea)
+        .radius;
+    let left = layout.origin.x + radius;
+    let right = layout.right() - radius;
+    for (index, (_kind, _motion, _damage, position)) in spawned.iter().enumerate() {
+        let t = index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32;
+        let expected_x = left + (right - left) * t + row_three_physics_line_x_offset(index);
+        assert!(
+            (position.x - expected_x).abs() < 0.001,
+            "physics pea {index} should use staggered x offset"
+        );
+    }
 }
 
 #[test]
