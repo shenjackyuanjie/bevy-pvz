@@ -15,31 +15,45 @@ WAVE_GROUPS = [
     (21, 25, "第 6 波：终局之战 — 压缩原第 22-25 波"),
 ]
 
-# Extra output-wave fillers for waves 4-6. Each entry is:
+# Extra output-wave fillers for waves 3-6. Each entry is:
 # (start_fraction, span_fraction, kind, count).
 # They add staggered spawn frequencies without extending the target timeline.
 LATE_WAVE_FILLERS = {
+    2: [
+        (0.02, 0.92, "Basic", 40),
+        (0.08, 0.86, "Conehead", 32),
+        (0.14, 0.80, "Buckethead", 24),
+        (0.21, 0.72, "Football", 18),
+        (0.05, 0.88, "Gargantuar", 24),
+        (0.17, 0.72, "GigaGargantuar", 12),
+    ],
     3: [
-        (0.03, 0.90, "Basic", 24),
-        (0.11, 0.80, "Conehead", 18),
-        (0.18, 0.74, "Imp", 24),
-        (0.27, 0.62, "Newspaper", 12),
-        (0.36, 0.52, "Buckethead", 12),
+        (0.02, 0.92, "Basic", 42),
+        (0.08, 0.86, "Conehead", 36),
+        (0.14, 0.80, "Imp", 48),
+        (0.22, 0.72, "Buckethead", 30),
+        (0.30, 0.64, "Football", 20),
+        (0.04, 0.90, "Gargantuar", 36),
+        (0.16, 0.76, "GigaGargantuar", 18),
     ],
     4: [
-        (0.03, 0.90, "Conehead", 32),
-        (0.09, 0.84, "Imp", 42),
-        (0.17, 0.75, "Buckethead", 22),
-        (0.26, 0.68, "Football", 14),
-        (0.35, 0.58, "ScreenDoor", 10),
+        (0.02, 0.92, "Conehead", 50),
+        (0.07, 0.88, "Imp", 60),
+        (0.13, 0.82, "Buckethead", 38),
+        (0.21, 0.74, "Football", 28),
+        (0.31, 0.62, "ScreenDoor", 20),
+        (0.03, 0.91, "Gargantuar", 48),
+        (0.14, 0.79, "GigaGargantuar", 24),
     ],
     5: [
-        (0.02, 0.90, "Imp", 48),
-        (0.08, 0.84, "Conehead", 36),
-        (0.15, 0.80, "Buckethead", 26),
-        (0.24, 0.75, "Football", 18),
-        (0.33, 0.64, "Pogo", 12),
-        (0.41, 0.54, "Digger", 10),
+        (0.01, 0.94, "Imp", 70),
+        (0.06, 0.90, "Conehead", 60),
+        (0.12, 0.84, "Buckethead", 48),
+        (0.19, 0.78, "Football", 36),
+        (0.28, 0.68, "Pogo", 22),
+        (0.37, 0.58, "Digger", 18),
+        (0.02, 0.94, "Gargantuar", 60),
+        (0.12, 0.84, "GigaGargantuar", 36),
     ],
 }
 
