@@ -122,6 +122,9 @@ pub(super) fn apply(
                     alpha,
                 ),
             ]);
+            for part in parts.iter_mut() {
+                part.offset.y += 18.0;
+            }
             true
         }
         ZombieKind::Imp | ZombieKind::IZombieImp => {

@@ -303,3 +303,26 @@ fn base_zombie_parts(palette: ZombiePalette, alpha: f32) -> Vec<ModelPart> {
         ),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn visual_bottom(kind: ZombieKind) -> f32 {
+        zombie_model_parts(kind, 1.0)
+            .iter()
+            .map(|part| part.offset.y - part.size.y * 0.5)
+            .min_by(f32::total_cmp)
+            .unwrap()
+    }
+
+    #[test]
+    fn giant_feet_align_with_basic_zombie_feet() {
+        let basic_bottom = visual_bottom(ZombieKind::Basic);
+        let gargantuar_bottom = visual_bottom(ZombieKind::Gargantuar);
+        let giga_bottom = visual_bottom(ZombieKind::GigaGargantuar);
+
+        assert!((gargantuar_bottom - basic_bottom).abs() <= 1.0);
+        assert!((giga_bottom - basic_bottom).abs() <= 1.0);
+    }
+}
