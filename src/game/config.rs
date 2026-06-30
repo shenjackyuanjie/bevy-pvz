@@ -10,7 +10,6 @@ pub struct GameplaySettings {
     pub physics_boundary_thickness: f32,
     pub physics_floor_friction: f32,
     pub physics_wall_half_height: f32,
-    pub physics_floor_half_width_scale: f32,
 }
 
 impl Default for GameplaySettings {
@@ -22,7 +21,6 @@ impl Default for GameplaySettings {
             physics_boundary_thickness: 10.0,
             physics_floor_friction: 0.65,
             physics_wall_half_height: 400.0,
-            physics_floor_half_width_scale: 0.75,
         }
     }
 }
@@ -40,10 +38,6 @@ impl GameplaySettings {
             ),
             ("physics_floor_friction", self.physics_floor_friction),
             ("physics_wall_half_height", self.physics_wall_half_height),
-            (
-                "physics_floor_half_width_scale",
-                self.physics_floor_half_width_scale,
-            ),
         ];
         for (name, value) in values {
             if !value.is_finite() || value < 0.0 {
@@ -60,10 +54,6 @@ impl GameplaySettings {
             ),
             ("physics_floor_friction", self.physics_floor_friction),
             ("physics_wall_half_height", self.physics_wall_half_height),
-            (
-                "physics_floor_half_width_scale",
-                self.physics_floor_half_width_scale,
-            ),
         ] {
             if value == 0.0 {
                 return Err(format!("{name} must be positive"));

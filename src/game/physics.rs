@@ -16,7 +16,7 @@ use bevy_rapier2d::prelude::*;
 use crate::game::config::GameplaySettings;
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
-use crate::game::lawn::LawnLayout;
+use crate::game::lawn::{LawnLayout, PEASHOOTER_ROW};
 use crate::game::level::LevelSetupSet;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
@@ -127,35 +127,24 @@ fn setup_physics_world(
     layout: Res<LawnLayout>,
     settings: Res<GameplaySettings>,
 ) {
-    let board_width = layout.cell_size.x * f32::from(layout.columns);
-    let center_x = layout.origin.x + board_width * 0.5;
+    let boundary = physics_boundary_layout(&layout, &settings);
 
-    // Collider::cuboid 使用半高，因此中心下移一个 thickness 后顶面正好对齐草坪底边。
+    // Collider::cuboid 使用半高，因此中心下移一个 thickness 后顶面正好对齐最低格底边。
     commands.spawn((
         RigidBody::Fixed,
-        Collider::cuboid(
-            board_width * settings.physics_floor_half_width_scale,
-            settings.physics_boundary_thickness,
-        ),
+        Collider::cuboid(boundary.floor_half_size.x, boundary.floor_half_size.y),
         Friction {
             coefficient: settings.physics_floor_friction,
             combine_rule: CoefficientCombineRule::Min,
         },
         world_groups(),
-        Transform::from_xyz(
-            center_x,
-            layout.origin.y - settings.physics_boundary_thickness,
-            0.0,
-        ),
+        Transform::from_xyz(boundary.floor_center.x, boundary.floor_center.y, 0.0),
         LevelEntity,
         Name::new("Physics floor"),
     ));
 
     // 左右侧墙：将物理沙箱限定在边界内。
-    for x in [
-        layout.origin.x - settings.physics_side_margins.x,
-        layout.right() + settings.physics_side_margins.y,
-    ] {
+    for x in boundary.wall_x {
         commands.spawn((
             RigidBody::Fixed,
             Collider::cuboid(
@@ -170,6 +159,33 @@ fn setup_physics_world(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PhysicsBoundaryLayout {
+    floor_center: Vec2,
+    floor_half_size: Vec2,
+    wall_x: [f32; 2],
+}
+
+fn physics_boundary_layout(
+    layout: &LawnLayout,
+    settings: &GameplaySettings,
+) -> PhysicsBoundaryLayout {
+    let wall_x = [
+        layout.origin.x - settings.physics_side_margins.x,
+        layout.right() + settings.physics_side_margins.y,
+    ];
+    let floor_top_y = layout.origin.y + f32::from(PEASHOOTER_ROW) * layout.cell_size.y;
+    let floor_half_width = (wall_x[1] - wall_x[0]) * 0.5 + settings.physics_boundary_thickness;
+    PhysicsBoundaryLayout {
+        floor_center: Vec2::new(
+            (wall_x[0] + wall_x[1]) * 0.5,
+            floor_top_y - settings.physics_boundary_thickness,
+        ),
+        floor_half_size: Vec2::new(floor_half_width, settings.physics_boundary_thickness),
+        wall_x,
+    }
+}
+
 /// 按 D 键切换物理碰撞体的调试渲染显示/隐藏。
 #[cfg(feature = "debug_tools")]
 fn toggle_physics_debug(
@@ -179,5 +195,25 @@ fn toggle_physics_debug(
 ) {
     if keyboard.just_pressed(controls.toggle_physics) {
         debug.enabled = !debug.enabled;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn physics_floor_sits_below_the_lowest_lane_and_reaches_walls() {
+        let layout = LawnLayout::default();
+        let settings = GameplaySettings::default();
+        let boundary = physics_boundary_layout(&layout, &settings);
+
+        let floor_top = boundary.floor_center.y + boundary.floor_half_size.y;
+        assert_eq!(
+            floor_top,
+            layout.origin.y + f32::from(PEASHOOTER_ROW) * layout.cell_size.y
+        );
+        assert!(boundary.floor_center.x - boundary.floor_half_size.x <= boundary.wall_x[0]);
+        assert!(boundary.floor_center.x + boundary.floor_half_size.x >= boundary.wall_x[1]);
     }
 }
