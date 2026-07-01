@@ -24,6 +24,7 @@ use crate::game::defense::lawn_mower_start_left;
 use crate::game::lawn::LawnLayout;
 use crate::game::level::LevelSetupSet;
 use crate::game::model::{model_bounds, zombie_model_parts};
+use crate::game::projectile::Projectile;
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 
@@ -49,6 +50,12 @@ pub const PHYSICS_STEP_TIME: DiagnosticPath =
 
 const LEFT_WALL_CLEARANCE_BEHIND_MOWER: f32 = 8.0;
 const RIGHT_WALL_CENTER_OFFSET_FROM_ZOMBIE_RIGHT: f32 = 6.0;
+const NORMAL_FIXED_UPDATE_HZ: f64 = 60.0;
+const REDUCED_FIXED_UPDATE_HZ: f64 = 30.0;
+const REDUCE_RATE_PROJECTILE_COUNT: usize = 2_500;
+const RESTORE_RATE_PROJECTILE_COUNT: usize = 1_800;
+const REDUCE_RATE_STEP_TIME_MS: f64 = 10.0;
+const RESTORE_RATE_STEP_TIME_MS: f64 = 6.0;
 
 /// 物理碰撞体调试渲染的启动配置。
 #[derive(Resource, Debug, Default, Clone, Copy)]
@@ -59,6 +66,50 @@ pub struct PhysicsDebugSettings {
 #[derive(Resource, Default)]
 struct PhysicsStepTimer(Option<Instant>);
 
+/// 最近一帧执行的物理步数及总耗时，用于识别 FixedUpdate 追赶开销。
+#[derive(Resource, Debug, Default)]
+pub struct PhysicsFrameStats {
+    accumulating_time_ms: f64,
+    accumulating_steps: u32,
+    frame_time_ms: f64,
+    frame_steps: u32,
+    last_step_time_ms: Option<f64>,
+}
+
+impl PhysicsFrameStats {
+    pub fn frame_time_ms(&self) -> f64 {
+        self.frame_time_ms
+    }
+
+    pub fn frame_steps(&self) -> u32 {
+        self.frame_steps
+    }
+}
+
+/// 当前固定更新频率。大规模物理弹丸场景下自动降载。
+#[derive(Resource, Debug)]
+pub struct SimulationRate {
+    hz: f64,
+}
+
+impl Default for SimulationRate {
+    fn default() -> Self {
+        Self {
+            hz: NORMAL_FIXED_UPDATE_HZ,
+        }
+    }
+}
+
+impl SimulationRate {
+    pub fn hz(&self) -> f64 {
+        self.hz
+    }
+
+    pub fn is_reduced(&self) -> bool {
+        self.hz == REDUCED_FIXED_UPDATE_HZ
+    }
+}
+
 /// 物理引擎插件。
 ///
 /// 配置 Rapier2D 物理管线（100 像素/米，固定在 FixedUpdate 调度中运行），
@@ -68,6 +119,8 @@ pub struct GamePhysicsPlugin;
 impl Plugin for GamePhysicsPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<PhysicsStepTimer>()
+            .init_resource::<PhysicsFrameStats>()
+            .init_resource::<SimulationRate>()
             .register_diagnostic(Diagnostic::new(PHYSICS_STEP_TIME).with_suffix("ms"))
             .add_plugins((
                 RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0).in_fixed_schedule(),
@@ -100,6 +153,14 @@ impl Plugin for GamePhysicsPlugin {
                         .before(PhysicsSet::Writeback),
                 ),
             )
+            .add_systems(
+                RunFixedMainLoop,
+                finish_physics_frame.in_set(RunFixedMainLoopSystems::AfterFixedMainLoop),
+            )
+            .add_systems(
+                Update,
+                adapt_fixed_update_rate.run_if(in_state(GameState::Playing)),
+            )
             .add_systems(Startup, apply_initial_physics_debug);
         #[cfg(feature = "debug_tools")]
         app.add_systems(Update, toggle_physics_debug);
@@ -110,13 +171,59 @@ fn begin_physics_step(mut timer: ResMut<PhysicsStepTimer>) {
     timer.0 = Some(Instant::now());
 }
 
-fn end_physics_step(mut timer: ResMut<PhysicsStepTimer>, mut diagnostics: Diagnostics) {
+fn end_physics_step(
+    mut timer: ResMut<PhysicsStepTimer>,
+    mut frame_stats: ResMut<PhysicsFrameStats>,
+    mut diagnostics: Diagnostics,
+) {
     let Some(started_at) = timer.0.take() else {
         return;
     };
-    diagnostics.add_measurement(&PHYSICS_STEP_TIME, || {
-        started_at.elapsed().as_secs_f64() * 1_000.0
-    });
+    let elapsed_ms = started_at.elapsed().as_secs_f64() * 1_000.0;
+    frame_stats.accumulating_time_ms += elapsed_ms;
+    frame_stats.accumulating_steps += 1;
+    diagnostics.add_measurement(&PHYSICS_STEP_TIME, || elapsed_ms);
+}
+
+fn finish_physics_frame(mut stats: ResMut<PhysicsFrameStats>) {
+    stats.frame_time_ms = stats.accumulating_time_ms;
+    stats.frame_steps = stats.accumulating_steps;
+    if stats.accumulating_steps > 0 {
+        stats.last_step_time_ms =
+            Some(stats.accumulating_time_ms / f64::from(stats.accumulating_steps));
+    }
+    stats.accumulating_time_ms = 0.0;
+    stats.accumulating_steps = 0;
+}
+
+fn adapt_fixed_update_rate(
+    physics_projectiles: Query<(), (With<Projectile>, With<RigidBody>)>,
+    frame_stats: Res<PhysicsFrameStats>,
+    mut rate: ResMut<SimulationRate>,
+    mut fixed_time: ResMut<Time<Fixed>>,
+) {
+    let projectile_count = physics_projectiles.iter().len();
+    let step_time_ms = frame_stats.last_step_time_ms.unwrap_or(0.0);
+    let target_hz = if rate.is_reduced() {
+        if projectile_count <= RESTORE_RATE_PROJECTILE_COUNT
+            && step_time_ms <= RESTORE_RATE_STEP_TIME_MS
+        {
+            NORMAL_FIXED_UPDATE_HZ
+        } else {
+            REDUCED_FIXED_UPDATE_HZ
+        }
+    } else if projectile_count >= REDUCE_RATE_PROJECTILE_COUNT
+        || step_time_ms >= REDUCE_RATE_STEP_TIME_MS
+    {
+        REDUCED_FIXED_UPDATE_HZ
+    } else {
+        NORMAL_FIXED_UPDATE_HZ
+    };
+
+    if target_hz != rate.hz {
+        rate.hz = target_hz;
+        fixed_time.set_timestep_hz(target_hz);
+    }
 }
 
 /// 将命令行启动配置应用到 Rapier 调试渲染上下文。

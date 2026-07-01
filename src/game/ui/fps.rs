@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use bevy::render::diagnostic::RenderDiagnosticsPlugin;
 
 use crate::game::assets::GameAssets;
-use crate::game::physics::PHYSICS_STEP_TIME;
+use crate::game::physics::{PHYSICS_STEP_TIME, PhysicsFrameStats, SimulationRate};
 
 const FPS_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
 
@@ -31,7 +31,9 @@ struct FpsText {
 
 fn setup_fps_overlay(mut commands: Commands, assets: Res<GameAssets>) {
     commands.spawn((
-        Text::new("FPS --\n帧耗时 -- ms\n渲染 -- ms\n物理模拟 -- ms"),
+        Text::new(
+            "FPS --\n帧耗时 -- ms\n渲染 CPU -- / GPU -- ms\n物理 -- ms/步 × -- = -- ms/帧\n固定更新 -- Hz",
+        ),
         TextFont {
             font: assets.chinese_font.clone(),
             font_size: 16.0,
@@ -58,6 +60,8 @@ fn setup_fps_overlay(mut commands: Commands, assets: Res<GameAssets>) {
 fn update_fps_overlay(
     time: Res<Time<Real>>,
     diagnostics: Res<DiagnosticsStore>,
+    physics_frame: Res<PhysicsFrameStats>,
+    simulation_rate: Res<SimulationRate>,
     mut fps_text: Single<(&mut Text, &mut FpsText)>,
 ) {
     let (text, state) = &mut *fps_text;
@@ -76,19 +80,24 @@ fn update_fps_overlay(
         .get(&PHYSICS_STEP_TIME)
         .and_then(|diagnostic| diagnostic.smoothed());
 
+    let cpu_render_time = sum_render_diagnostics(&diagnostics, "elapsed_cpu");
     let gpu_render_time = sum_render_diagnostics(&diagnostics, "elapsed_gpu");
-    let (render_source, render_time) = if gpu_render_time.is_some() {
-        ("GPU", gpu_render_time)
+    let rate_suffix = if simulation_rate.is_reduced() {
+        "（高负载）"
     } else {
-        ("CPU", sum_render_diagnostics(&diagnostics, "elapsed_cpu"))
+        ""
     };
 
     text.0 = format!(
-        "FPS {}\n帧耗时 {} ms\n渲染 {render_source} {} ms\n物理模拟 {} ms",
+        "FPS {}\n帧耗时 {} ms\n渲染 CPU {} / GPU {} ms\n物理 {} ms/步 × {} = {:.2} ms/帧\n固定更新 {:.0} Hz{rate_suffix}",
         format_fps(fps),
         format_milliseconds(frame_time),
-        format_milliseconds(render_time),
+        format_milliseconds(cpu_render_time),
+        format_milliseconds(gpu_render_time),
         format_milliseconds(physics_time),
+        physics_frame.frame_steps(),
+        physics_frame.frame_time_ms(),
+        simulation_rate.hz(),
     );
 }
 

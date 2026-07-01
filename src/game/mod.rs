@@ -3,7 +3,7 @@
 //! 本模块是游戏逻辑的入口，负责：
 //! - 公开所有子模块（战斗、草坪、关卡、物理、植物、弹丸、调度、状态、UI、僵尸）
 //! - 组合所有子插件为统一的 [`GamePlugin`]
-//! - 配置固定时间步长更新（60 Hz）下各 [`GameSet`] 阶段的连锁执行顺序
+//! - 配置自适应固定时间步长更新下各 [`GameSet`] 阶段的连锁执行顺序
 //!
 //! 调度顺序：
 //! `Spawn` → `LogicMovement` → `ContactRead` → `Combat` → `DeathAndCleanup` → `LevelOutcome`
@@ -28,6 +28,7 @@ pub mod ui;
 pub mod zombie;
 
 use bevy::prelude::*;
+use std::time::Duration;
 
 use crate::game::assets::GameAssets;
 use crate::game::catalog::ContentCatalog;
@@ -64,6 +65,8 @@ impl Plugin for GamePlugin {
             .init_resource::<UiTheme>()
             .init_resource::<GameAssets>()
             .insert_resource(Time::<Fixed>::from_hz(60.0))
+            // 防止重负载帧一次补跑十几次 FixedUpdate，形成越追赶越卡的死亡螺旋。
+            .insert_resource(Time::<Virtual>::from_max_delta(Duration::from_millis(50)))
             .configure_sets(
                 FixedUpdate,
                 (
