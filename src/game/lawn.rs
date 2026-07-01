@@ -75,7 +75,7 @@ impl Default for LawnLayout {
 impl LawnLayout {
     /// 将世界坐标转换为格子坐标。
     ///
-    /// 返回 `Some(GridCell)` 如果坐标落在底层、豌豆专用行或六个空中格内。
+    /// 返回 `Some(GridCell)` 如果坐标落在底层、豌豆专用行或八个空中格内。
     pub fn world_to_cell(&self, world: Vec2) -> Option<GridCell> {
         let local = world - self.origin;
         if local.x < 0.0 {
@@ -96,7 +96,7 @@ impl LawnLayout {
             )
     }
 
-    /// 检查格子是否属于底层草坪、豌豆专用行或六个空中种植格。
+    /// 检查格子是否属于底层草坪、豌豆专用行或八个空中种植格。
     pub fn contains(&self, cell: GridCell) -> bool {
         if cell.column >= self.columns {
             return false;
@@ -105,7 +105,7 @@ impl LawnLayout {
             return true;
         }
         AIR_ROWS.contains(&cell.row)
-            && (cell.column == 0 || cell.column.saturating_add(2) >= self.columns)
+            && (cell.column < 2 || cell.column.saturating_add(2) >= self.columns)
     }
 
     /// 获取唯一道路的中心 Y 坐标。
@@ -165,7 +165,7 @@ impl CellOccupancy {
 #[derive(Component)]
 struct LawnVisual;
 
-/// 绘制底层道路、豌豆专用行、六个空中种植格，以及左侧的房子边界线。
+/// 绘制底层道路、豌豆专用行、八个空中种植格，以及左侧的房子边界线。
 ///
 /// 格子颜色为统一的 PVZ 风格绿色棋盘格，避免出现上下方向的渐变。
 /// 房子边线是一条深红色竖线，表示僵尸突破即失败的边界。
@@ -195,11 +195,7 @@ fn draw_lawn_placeholders(mut commands: Commands, layout: Res<LawnLayout>) {
         ));
     }
 
-    for column in [
-        0,
-        layout.columns.saturating_sub(2),
-        layout.columns.saturating_sub(1),
-    ] {
+    for column in 0..layout.columns {
         for row in AIR_ROWS {
             let cell = GridCell { column, row };
             if !layout.contains(cell) {
@@ -248,10 +244,12 @@ mod tests {
             let cell = GridCell { column, row: 0 };
             assert_eq!(layout.world_to_cell(layout.cell_center(cell)), Some(cell));
         }
-        for column in [0, layout.columns - 2, layout.columns - 1] {
+        for column in 0..layout.columns {
             for row in AIR_ROWS {
                 let cell = GridCell { column, row };
-                assert_eq!(layout.world_to_cell(layout.cell_center(cell)), Some(cell));
+                if layout.contains(cell) {
+                    assert_eq!(layout.world_to_cell(layout.cell_center(cell)), Some(cell));
+                }
             }
         }
         for column in 0..layout.columns {
@@ -284,7 +282,7 @@ mod tests {
             None
         );
         assert_eq!(
-            layout.world_to_cell(layout.origin + layout.cell_size * Vec2::new(1.5, 2.5)),
+            layout.world_to_cell(layout.origin + layout.cell_size * Vec2::new(2.5, 2.5)),
             None
         );
 
