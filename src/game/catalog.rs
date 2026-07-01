@@ -791,5 +791,4 @@ mod tests {
         assert_eq!(screen_door.health, 200.0);
         assert_eq!(screen_door.equipment_health, Some(1100.0));
     }
-
 }

@@ -627,5 +627,4 @@ mod tests {
             Some(PlantPlacement::Replace(sunflower))
         );
     }
-
 }

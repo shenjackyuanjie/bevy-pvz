@@ -20,7 +20,7 @@ use crate::game::catalog::{ContentCatalog, ZombieKind};
 use crate::game::config::GameplaySettings;
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
-use crate::game::defense::lawn_mower_start_right;
+use crate::game::defense::lawn_mower_start_left;
 use crate::game::lawn::LawnLayout;
 use crate::game::level::LevelSetupSet;
 use crate::game::model::{model_bounds, zombie_model_parts};
@@ -46,6 +46,9 @@ pub const TORCHWOOD_GROUP: Group = Group::GROUP_7;
 /// Rapier 单次模拟步进的 CPU 耗时（毫秒）。
 pub const PHYSICS_STEP_TIME: DiagnosticPath =
     DiagnosticPath::const_new("physics/step_simulation_time");
+
+const LEFT_WALL_CLEARANCE_BEHIND_MOWER: f32 = 8.0;
+const RIGHT_WALL_CENTER_OFFSET_FROM_ZOMBIE_RIGHT: f32 = 6.0;
 
 /// 物理碰撞体调试渲染的启动配置。
 #[derive(Resource, Debug, Default, Clone, Copy)]
@@ -224,12 +227,10 @@ fn physics_boundary_layout(
         .max_by(f32::total_cmp)
         .expect("zombie catalog must not be empty");
     let wall_x = [
-        lawn_mower_start_right(layout)
-            + settings.physics_boundary_thickness
-            + settings.physics_wall_clearances.x,
-        zombie_spawn_right
-            + settings.physics_boundary_thickness
-            + settings.physics_wall_clearances.y,
+        lawn_mower_start_left(layout)
+            - LEFT_WALL_CLEARANCE_BEHIND_MOWER
+            - settings.physics_boundary_thickness,
+        zombie_spawn_right + RIGHT_WALL_CENTER_OFFSET_FROM_ZOMBIE_RIGHT,
     ];
     let floor_top_y = layout.origin.y;
     let floor_half_width = (wall_x[1] - wall_x[0]) * 0.5 + settings.physics_boundary_thickness;

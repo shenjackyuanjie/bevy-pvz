@@ -293,5 +293,4 @@ mod tests {
         occupancy.0.insert(cell, Entity::PLACEHOLDER);
         assert!(!occupancy.is_available(cell, &layout));
     }
-
 }

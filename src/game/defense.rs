@@ -13,11 +13,11 @@ const MOWER_SPEED: f32 = 430.0;
 const MOWER_TRIGGER_AHEAD: f32 = 74.0;
 const MOWER_HIT_HALF_SIZE: Vec2 = Vec2::new(38.0, 32.0);
 const MOWER_START_OFFSET_X: f32 = -46.0;
-const MOWER_VISUAL_RIGHT_EXTENT: f32 = 47.0;
+const MOWER_VISUAL_LEFT_EXTENT: f32 = 38.0;
 
-/// 待命小推车模型最右侧的世界 X 坐标。
-pub(crate) fn lawn_mower_start_right(layout: &LawnLayout) -> f32 {
-    layout.origin.x + MOWER_START_OFFSET_X + MOWER_VISUAL_RIGHT_EXTENT
+/// 待命小推车模型最左侧的世界 X 坐标。
+pub(crate) fn lawn_mower_start_left(layout: &LawnLayout) -> f32 {
+    layout.origin.x + MOWER_START_OFFSET_X - MOWER_VISUAL_LEFT_EXTENT
 }
 
 pub struct HomeDefensePlugin;
