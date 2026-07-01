@@ -45,6 +45,10 @@ fn final_wave_is_spawned_before_outcome_check() {
             ..default()
         })
         .init_resource::<ContentCatalog>()
+        .init_resource::<Assets<Mesh>>()
+        .init_resource::<Assets<ColorMaterial>>()
+        .init_resource::<super::super::zombie::ZombieRenderAssets>()
+        .init_resource::<super::super::zombie::ZombieRenderQuality>()
         .init_state::<GameState>()
         .add_systems(
             FixedUpdate,

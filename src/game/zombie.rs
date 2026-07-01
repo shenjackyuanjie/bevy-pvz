@@ -12,13 +12,16 @@
 
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
+use std::collections::HashMap;
 use std::time::Duration;
 
 use crate::game::assets::GameAssets;
 use crate::game::catalog::{ColliderCenterOffset, ColliderHalfSize, ContentCatalog};
 use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Health, Team};
 use crate::game::lawn::{GridCell, LawnLayout};
-use crate::game::model::{ZombieModelDetail, model_bounds, zombie_model_parts_with_detail};
+use crate::game::model::{
+    ZombieModelDetail, model_bounds, model_parts_mesh, zombie_model_parts_with_detail,
+};
 use crate::game::physics::zombie_groups;
 use crate::game::plant::Plant;
 use crate::game::schedule::GameSet;
@@ -29,14 +32,21 @@ pub use crate::game::catalog::ZombieKind;
 
 const CHILL_DURATION: Duration = Duration::from_secs(10);
 const CHILL_TIME_SCALE: f32 = 0.5;
-const HORDE_SIMPLIFICATION_THRESHOLD: usize = 180;
+const HORDE_SIMPLIFICATION_THRESHOLD: usize = 4_000;
+const HORDE_FULL_DETAIL_RESTORE_THRESHOLD: usize = 3_200;
 
 /// 僵尸插件，注册生成、状态更新、行走和攻击系统。
 pub struct ZombiePlugin;
 
 impl Plugin for ZombiePlugin {
     fn build(&self, app: &mut App) {
-        app.add_message::<SpawnZombie>()
+        app.init_resource::<ZombieRenderAssets>()
+            .init_resource::<ZombieRenderQuality>()
+            .add_message::<SpawnZombie>()
+            .add_systems(
+                Update,
+                sync_zombie_render_quality.run_if(in_state(GameState::Playing)),
+            )
             .add_systems(
                 Update,
                 ensure_zombie_debug_children.run_if(in_state(GameState::Playing)),
@@ -122,6 +132,47 @@ struct ZombieNameText;
 #[derive(Component)]
 struct ZombieEquipmentPart;
 
+#[derive(Clone)]
+struct ZombieRenderMeshes {
+    body: Handle<Mesh>,
+    equipment: Option<Handle<Mesh>>,
+}
+
+#[derive(Clone)]
+struct ZombieRenderAssetSet {
+    full: ZombieRenderMeshes,
+    simplified: ZombieRenderMeshes,
+    bounds: crate::game::model::ModelBounds,
+}
+
+impl ZombieRenderAssetSet {
+    fn meshes(&self, detail: ZombieModelDetail) -> &ZombieRenderMeshes {
+        match detail {
+            ZombieModelDetail::Full => &self.full,
+            ZombieModelDetail::Simplified => &self.simplified,
+        }
+    }
+}
+
+#[derive(Resource, Default)]
+pub(crate) struct ZombieRenderAssets {
+    material: Option<Handle<ColorMaterial>>,
+    models: HashMap<ZombieKind, ZombieRenderAssetSet>,
+}
+
+#[derive(Resource)]
+pub(crate) struct ZombieRenderQuality {
+    detail: ZombieModelDetail,
+}
+
+impl Default for ZombieRenderQuality {
+    fn default() -> Self {
+        Self {
+            detail: ZombieModelDetail::Full,
+        }
+    }
+}
+
 #[derive(Component)]
 struct ZombieDebugOverlaySpawned;
 
@@ -170,10 +221,12 @@ pub(crate) fn spawn_zombies(
     catalog: Res<ContentCatalog>,
     mut requests: MessageReader<SpawnZombie>,
     layout: Res<LawnLayout>,
-    zombies: Query<(), With<Zombie>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut render_assets: ResMut<ZombieRenderAssets>,
+    render_quality: Res<ZombieRenderQuality>,
 ) {
     let debug_enabled = debug.as_ref().is_some_and(|context| context.enabled);
-    let mut zombie_count = zombies.iter().len();
 
     for request in requests.read() {
         let definition = catalog.zombie(request.kind);
@@ -187,20 +240,19 @@ pub(crate) fn spawn_zombies(
             .as_ref()
             .map(|assets| assets.chinese_font.clone())
             .unwrap_or_default();
-        let detail = if zombie_count >= HORDE_SIMPLIFICATION_THRESHOLD {
-            ZombieModelDetail::Simplified
-        } else {
-            ZombieModelDetail::Full
-        };
-        let model_parts = zombie_model_parts_with_detail(request.kind, 1.0, detail);
-        let model_bounds = model_bounds(&model_parts);
-        // 透明根节点承担碰撞与逻辑，子级色块、名牌和血条自动跟随。
+        let render = zombie_render_assets(
+            request.kind,
+            &mut meshes,
+            &mut materials,
+            &mut render_assets,
+        );
+        let render_meshes = render.meshes(render_quality.detail);
+        let material = render_assets.material.as_ref().unwrap().clone();
+        // 根节点同时承担逻辑与合并后的本体渲染，装备保留为独立子网格。
         let mut entity = commands.spawn((
             (
-                Sprite::from_color(
-                    definition.visual.color.with_alpha(0.0),
-                    definition.visual.size,
-                ),
+                Mesh2d(render_meshes.body.clone()),
+                MeshMaterial2d(material.clone()),
                 Transform::from_translation(position.extend(2.0)),
                 Zombie {
                     speed: definition.speed,
@@ -217,12 +269,12 @@ pub(crate) fn spawn_zombies(
             (
                 RigidBody::KinematicPositionBased,
                 Collider::compound(vec![(
-                    model_bounds.center,
+                    render.bounds.center,
                     0.0,
-                    Collider::cuboid(model_bounds.half_size.x, model_bounds.half_size.y),
+                    Collider::cuboid(render.bounds.half_size.x, render.bounds.half_size.y),
                 )]),
-                ColliderHalfSize(model_bounds.half_size),
-                ColliderCenterOffset(model_bounds.center),
+                ColliderHalfSize(render.bounds.half_size),
+                ColliderCenterOffset(render.bounds.center),
                 LockedAxes::ROTATION_LOCKED,
                 ActiveEvents::COLLISION_EVENTS,
                 zombie_groups(),
@@ -237,16 +289,14 @@ pub(crate) fn spawn_zombies(
             entity.insert(ZombieDebugOverlaySpawned);
         }
         entity.with_children(|parent| {
-            for part in model_parts {
-                let mut child = parent.spawn((
-                    Sprite::from_color(part.color, part.size),
-                    Transform::from_xyz(part.offset.x, part.offset.y, part.z)
-                        .with_rotation(Quat::from_rotation_z(part.rotation)),
-                    Name::new(part.name),
+            if let Some(equipment) = &render_meshes.equipment {
+                parent.spawn((
+                    Mesh2d(equipment.clone()),
+                    MeshMaterial2d(material),
+                    Transform::IDENTITY,
+                    ZombieEquipmentPart,
+                    Name::new("Zombie equipment model"),
                 ));
-                if part.is_equipment {
-                    child.insert(ZombieEquipmentPart);
-                }
             }
             if debug_enabled {
                 let full_health = definition.health + definition.equipment_health.unwrap_or(0.0);
@@ -259,7 +309,100 @@ pub(crate) fn spawn_zombies(
                 );
             }
         });
-        zombie_count += 1;
+    }
+}
+
+fn zombie_render_assets(
+    kind: ZombieKind,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+    render_assets: &mut ZombieRenderAssets,
+) -> ZombieRenderAssetSet {
+    if let Some(render) = render_assets.models.get(&kind) {
+        return render.clone();
+    }
+    render_assets
+        .material
+        .get_or_insert_with(|| materials.add(ColorMaterial::default()));
+
+    let full_parts = zombie_model_parts_with_detail(kind, 1.0, ZombieModelDetail::Full);
+    let simplified_parts = zombie_model_parts_with_detail(kind, 1.0, ZombieModelDetail::Simplified);
+    let render = ZombieRenderAssetSet {
+        bounds: model_bounds(&full_parts),
+        full: zombie_render_meshes(&full_parts, meshes),
+        simplified: zombie_render_meshes(&simplified_parts, meshes),
+    };
+    render_assets.models.insert(kind, render.clone());
+    render
+}
+
+fn zombie_render_meshes(
+    parts: &[crate::game::model::ModelPart],
+    meshes: &mut Assets<Mesh>,
+) -> ZombieRenderMeshes {
+    let body: Vec<_> = parts
+        .iter()
+        .copied()
+        .filter(|part| !part.is_equipment)
+        .collect();
+    let equipment: Vec<_> = parts
+        .iter()
+        .copied()
+        .filter(|part| part.is_equipment)
+        .collect();
+    ZombieRenderMeshes {
+        body: meshes.add(model_parts_mesh(&body)),
+        equipment: (!equipment.is_empty()).then(|| meshes.add(model_parts_mesh(&equipment))),
+    }
+}
+
+fn sync_zombie_render_quality(
+    mut quality: ResMut<ZombieRenderQuality>,
+    render_assets: Res<ZombieRenderAssets>,
+    zombies: Query<(Entity, &ZombieKind, &Children), With<Zombie>>,
+    mut body_meshes: Query<&mut Mesh2d, (With<Zombie>, Without<ZombieEquipmentPart>)>,
+    mut equipment_meshes: Query<&mut Mesh2d, With<ZombieEquipmentPart>>,
+) {
+    let zombie_count = zombies.iter().len();
+    let next_detail = render_detail_with_hysteresis(
+        zombie_count,
+        quality.detail,
+        HORDE_SIMPLIFICATION_THRESHOLD,
+        HORDE_FULL_DETAIL_RESTORE_THRESHOLD,
+    );
+    if next_detail == quality.detail {
+        return;
+    }
+    quality.detail = next_detail;
+
+    for (entity, kind, children) in &zombies {
+        let Some(render) = render_assets.models.get(kind) else {
+            continue;
+        };
+        let desired = render.meshes(next_detail);
+        if let Ok(mut mesh) = body_meshes.get_mut(entity) {
+            mesh.0 = desired.body.clone();
+        }
+        if let Some(equipment) = &desired.equipment {
+            for child in children.iter() {
+                if let Ok(mut mesh) = equipment_meshes.get_mut(child) {
+                    mesh.0 = equipment.clone();
+                }
+            }
+        }
+    }
+}
+
+fn render_detail_with_hysteresis(
+    count: usize,
+    current: ZombieModelDetail,
+    simplify_at: usize,
+    restore_at: usize,
+) -> ZombieModelDetail {
+    match current {
+        ZombieModelDetail::Full if count >= simplify_at => ZombieModelDetail::Simplified,
+        ZombieModelDetail::Simplified if count <= restore_at => ZombieModelDetail::Full,
+        _ => current,
     }
 }
 
@@ -567,5 +710,26 @@ fn tick_zombie_attacks(
                 kind: DamageKind::Bite,
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zombie_render_detail_uses_hysteresis() {
+        assert_eq!(
+            render_detail_with_hysteresis(10, ZombieModelDetail::Full, 10, 8),
+            ZombieModelDetail::Simplified
+        );
+        assert_eq!(
+            render_detail_with_hysteresis(9, ZombieModelDetail::Simplified, 10, 8),
+            ZombieModelDetail::Simplified
+        );
+        assert_eq!(
+            render_detail_with_hysteresis(8, ZombieModelDetail::Simplified, 10, 8),
+            ZombieModelDetail::Full
+        );
     }
 }

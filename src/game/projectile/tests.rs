@@ -77,6 +77,7 @@ fn row_three_effect_turns_fire_pea_into_physics_fire_peas() {
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<ColorMaterial>>()
         .init_resource::<ProjectileRenderAssets>()
+        .init_resource::<ProjectileRenderQuality>()
         .add_systems(FixedUpdate, advance_path_projectiles);
     let layout = app.world().resource::<LawnLayout>().clone();
     let source = app
@@ -193,6 +194,7 @@ fn spawn_request_builds_distinct_motion_pipelines() {
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<ColorMaterial>>()
         .init_resource::<ProjectileRenderAssets>()
+        .init_resource::<ProjectileRenderQuality>()
         .add_systems(Update, spawn_projectiles);
     for kind in [ProjectileKind::Pea, ProjectileKind::PhysicsPea] {
         app.world_mut().write_message(SpawnProjectile {
@@ -258,6 +260,31 @@ fn physics_projectiles_use_smaller_radius_than_path_peas() {
 }
 
 #[test]
+fn projectile_render_detail_uses_hysteresis() {
+    assert_eq!(
+        projectile_render_detail(
+            PROJECTILE_SIMPLIFICATION_THRESHOLD,
+            ProjectileRenderDetail::Full,
+        ),
+        ProjectileRenderDetail::Simplified
+    );
+    assert_eq!(
+        projectile_render_detail(
+            PROJECTILE_FULL_DETAIL_RESTORE_THRESHOLD + 1,
+            ProjectileRenderDetail::Simplified,
+        ),
+        ProjectileRenderDetail::Simplified
+    );
+    assert_eq!(
+        projectile_render_detail(
+            PROJECTILE_FULL_DETAIL_RESTORE_THRESHOLD,
+            ProjectileRenderDetail::Simplified,
+        ),
+        ProjectileRenderDetail::Full
+    );
+}
+
+#[test]
 fn ice_and_fire_adornments_stay_inside_projectile_body() {
     let catalog = ContentCatalog::default();
     for kind in [ProjectileKind::IcePea, ProjectileKind::FirePea] {
@@ -265,15 +292,11 @@ fn ice_and_fire_adornments_stay_inside_projectile_body() {
         for part in projectile_adornment_parts(kind) {
             assert!(
                 part.offset.x.abs() + part.size.x * 0.5 <= radius,
-                "{:?} adornment {} exceeds projectile width",
-                kind,
-                part.name
+                "{kind:?} adornment exceeds projectile width"
             );
             assert!(
                 part.offset.y.abs() + part.size.y * 0.5 <= radius,
-                "{:?} adornment {} exceeds projectile height",
-                kind,
-                part.name
+                "{kind:?} adornment exceeds projectile height"
             );
         }
     }
@@ -317,6 +340,7 @@ fn ignition_changes_damage_kind_and_render_assets() {
         .init_resource::<Assets<Mesh>>()
         .init_resource::<Assets<ColorMaterial>>()
         .init_resource::<ProjectileRenderAssets>()
+        .init_resource::<ProjectileRenderQuality>()
         .add_systems(
             Update,
             (spawn_projectiles, apply_projectile_ignitions).chain(),

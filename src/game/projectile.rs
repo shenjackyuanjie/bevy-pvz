@@ -27,6 +27,7 @@ use crate::game::combat::{ApplyDamage, DamageKind, EquipmentHealth, Team};
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
 use crate::game::lawn::{GridCell, LawnLayout};
+use crate::game::model::ColoredMeshBuilder;
 use crate::game::physics::physics_projectile_groups;
 use crate::game::plant::{TorchwoodFlameCollider, TorchwoodFlameZone};
 use crate::game::schedule::GameSet;
@@ -43,7 +44,9 @@ const ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY: Vec2 = Vec2::new(0.0, -20.0);
 const ROW_THREE_PHYSICS_LINE_X_JITTER: f32 = 2.0;
 const PHYSICS_PROJECTILE_RADIUS_SCALE: f32 = 0.75;
 const PHYSICS_PROJECTILE_CLEANUP_PADDING: f32 = 320.0;
-const PROJECTILE_SIMPLIFICATION_THRESHOLD: usize = 300;
+const PROJECTILE_CCD_THRESHOLD: usize = 300;
+const PROJECTILE_SIMPLIFICATION_THRESHOLD: usize = 6_000;
+const PROJECTILE_FULL_DETAIL_RESTORE_THRESHOLD: usize = 4_800;
 
 /// 弹丸插件，注册生成、运动、碰撞检测、伤害解析和生命周期管理的系统。
 pub struct ProjectilePlugin;
@@ -51,6 +54,7 @@ pub struct ProjectilePlugin;
 impl Plugin for ProjectilePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ProjectileRenderAssets>()
+            .init_resource::<ProjectileRenderQuality>()
             .add_message::<SpawnProjectile>()
             .add_message::<ProjectileHit>()
             .add_message::<IgniteProjectile>()
@@ -91,6 +95,10 @@ impl Plugin for ProjectilePlugin {
                     .in_set(GameSet::DeathAndCleanup)
                     .run_if(in_state(GameState::Playing)),
             );
+        app.add_systems(
+            Update,
+            sync_projectile_render_quality.run_if(in_state(GameState::Playing)),
+        );
         #[cfg(feature = "debug_tools")]
         app.add_systems(Update, projectile_sandbox_keys);
     }
@@ -159,12 +167,6 @@ enum LeftEdgePathPhase {
 #[derive(Component, Debug, Clone, Copy)]
 struct ProjectileRadius(f32);
 
-#[derive(Component)]
-struct ProjectileFill;
-
-#[derive(Component)]
-struct ProjectileAdornment;
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 enum ProjectileRenderDetail {
     Full,
@@ -173,7 +175,6 @@ enum ProjectileRenderDetail {
 
 #[derive(Clone, Copy)]
 struct ProjectileAdornmentPart {
-    name: &'static str,
     color: Color,
     size: Vec2,
     offset: Vec2,
@@ -183,10 +184,17 @@ struct ProjectileAdornmentPart {
 
 #[derive(Clone)]
 struct ProjectileRenderAssetSet {
-    border_mesh: Handle<Mesh>,
-    fill_mesh: Handle<Mesh>,
-    border_material: Handle<ColorMaterial>,
-    fill_material: Handle<ColorMaterial>,
+    full_mesh: Handle<Mesh>,
+    simplified_mesh: Handle<Mesh>,
+}
+
+impl ProjectileRenderAssetSet {
+    fn mesh(&self, detail: ProjectileRenderDetail) -> Handle<Mesh> {
+        match detail {
+            ProjectileRenderDetail::Full => self.full_mesh.clone(),
+            ProjectileRenderDetail::Simplified => self.simplified_mesh.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
@@ -206,7 +214,23 @@ impl ProjectileRenderKey {
 
 /// 按弹丸种类复用圆形网格与纯色材质，避免每次发射都创建永久资产。
 #[derive(Resource, Default)]
-struct ProjectileRenderAssets(HashMap<ProjectileRenderKey, ProjectileRenderAssetSet>);
+struct ProjectileRenderAssets {
+    material: Option<Handle<ColorMaterial>>,
+    projectiles: HashMap<ProjectileRenderKey, ProjectileRenderAssetSet>,
+}
+
+#[derive(Resource)]
+struct ProjectileRenderQuality {
+    detail: ProjectileRenderDetail,
+}
+
+impl Default for ProjectileRenderQuality {
+    fn default() -> Self {
+        Self {
+            detail: ProjectileRenderDetail::Full,
+        }
+    }
+}
 
 /// 命中策略组件，控制弹丸命中后的行为。
 #[derive(Component, Debug)]
@@ -264,12 +288,8 @@ type IgnitableProjectileItem<'a> = (
     &'a mut Projectile,
     &'a mut ProjectileKind,
     &'a mut Mesh2d,
-    &'a mut MeshMaterial2d<ColorMaterial>,
     &'a ProjectileRadius,
-    Option<&'a Children>,
 );
-type ProjectileFillItem<'a> = (&'a mut Mesh2d, &'a mut MeshMaterial2d<ColorMaterial>);
-type ProjectileFillFilter = (With<ProjectileFill>, Without<Projectile>);
 type ResolvedProjectileItem<'a> = (
     &'a Projectile,
     &'a ProjectileKind,
@@ -291,9 +311,8 @@ struct IgnitionParams<'w, 's> {
     meshes: ResMut<'w, Assets<Mesh>>,
     materials: ResMut<'w, Assets<ColorMaterial>>,
     render_assets: ResMut<'w, ProjectileRenderAssets>,
+    render_quality: Res<'w, ProjectileRenderQuality>,
     projectiles: Query<'w, 's, IgnitableProjectileItem<'static>>,
-    fills: Query<'w, 's, ProjectileFillItem<'static>, ProjectileFillFilter>,
-    adornments: Query<'w, 's, (), With<ProjectileAdornment>>,
 }
 
 /// 消费 [`SpawnProjectile`] 消息，创建对应的弹丸实体。
@@ -305,6 +324,7 @@ fn spawn_projectiles(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut render_assets: ResMut<ProjectileRenderAssets>,
+    render_quality: Res<ProjectileRenderQuality>,
     mut requests: MessageReader<SpawnProjectile>,
     projectiles: Query<(), With<Projectile>>,
 ) {
@@ -317,7 +337,6 @@ fn spawn_projectiles(
                 physics_projectile_radius(definition.radius)
             }
         };
-        let visual_scale = projectile_visual_scale(definition.radius, radius);
         let render = projectile_render_assets(
             request.kind,
             radius,
@@ -326,16 +345,12 @@ fn spawn_projectiles(
             &mut materials,
             &mut render_assets,
         );
-        let render_detail = projectile_render_detail(projectile_count);
-        let root_material = match render_detail {
-            ProjectileRenderDetail::Full => render.border_material.clone(),
-            ProjectileRenderDetail::Simplified => render.fill_material.clone(),
-        };
+        let material = render_assets.material.as_ref().unwrap().clone();
 
-        // 共享基础组件：圆形描边、变换、Projectile 核心组件和命中注册表等
+        // 描边、填充和高光已合并进共享网格，每颗弹丸只保留一个渲染实体。
         let base = (
-            Mesh2d(render.border_mesh.clone()),
-            MeshMaterial2d(root_material),
+            Mesh2d(render.mesh(render_quality.detail)),
+            MeshMaterial2d(material),
             Transform::from_translation(request.origin.extend(3.0)),
             Projectile {
                 owner: request.owner,
@@ -389,7 +404,7 @@ fn spawn_projectiles(
                 Friction::coefficient(friction),
                 GravityScale(gravity_scale),
                 Ccd {
-                    enabled: ccd && render_detail == ProjectileRenderDetail::Full,
+                    enabled: ccd && projectile_count < PROJECTILE_CCD_THRESHOLD,
                 },
                 physics_projectile_groups(),
             )),
@@ -408,18 +423,7 @@ fn spawn_projectiles(
                 after_arrival,
             });
         }
-        if render_detail == ProjectileRenderDetail::Full {
-            spawn_projectile_render_children(&mut projectile, &render, request.kind, visual_scale);
-        }
         projectile_count += 1;
-    }
-}
-
-fn projectile_render_detail(projectile_count: usize) -> ProjectileRenderDetail {
-    if projectile_count >= PROJECTILE_SIMPLIFICATION_THRESHOLD {
-        ProjectileRenderDetail::Simplified
-    } else {
-        ProjectileRenderDetail::Full
     }
 }
 
@@ -436,47 +440,8 @@ fn projectile_name(kind: ProjectileKind, physics: bool) -> &'static str {
     }
 }
 
-fn spawn_projectile_render_children(
-    projectile: &mut EntityCommands,
-    render: &ProjectileRenderAssetSet,
-    kind: ProjectileKind,
-    visual_scale: f32,
-) {
-    projectile.with_child((
-        Mesh2d(render.fill_mesh.clone()),
-        MeshMaterial2d(render.fill_material.clone()),
-        Transform::from_xyz(0.0, 0.0, 0.1),
-        ProjectileFill,
-        Name::new("Projectile fill"),
-    ));
-    projectile.with_children(|parent| {
-        spawn_projectile_adornments(parent, kind, visual_scale);
-    });
-}
-
-fn spawn_projectile_adornments(
-    parent: &mut ChildSpawnerCommands,
-    kind: ProjectileKind,
-    visual_scale: f32,
-) {
-    for part in projectile_adornment_parts(kind) {
-        parent.spawn((
-            Sprite::from_color(part.color, part.size * visual_scale),
-            Transform::from_xyz(
-                part.offset.x * visual_scale,
-                part.offset.y * visual_scale,
-                part.z,
-            )
-            .with_rotation(Quat::from_rotation_z(part.rotation)),
-            ProjectileAdornment,
-            Name::new(part.name),
-        ));
-    }
-}
-
 fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPart> {
     let shine = ProjectileAdornmentPart {
-        name: "豌豆高光",
         color: Color::srgba(1.0, 1.0, 0.82, 0.76),
         size: Vec2::new(6.0, 3.0),
         offset: Vec2::new(-3.0, 4.0),
@@ -486,7 +451,6 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
     match kind {
         ProjectileKind::Pea => vec![
             ProjectileAdornmentPart {
-                name: "豌豆下缘阴影",
                 color: Color::srgba(0.04, 0.28, 0.04, 0.50),
                 size: Vec2::new(11.0, 3.0),
                 offset: Vec2::new(1.0, -4.0),
@@ -497,7 +461,6 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
         ],
         ProjectileKind::IcePea | ProjectileKind::PhysicsPea => vec![
             ProjectileAdornmentPart {
-                name: "冰豌豆内核",
                 color: Color::srgba(0.78, 0.98, 1.0, 0.82),
                 size: Vec2::new(8.0, 4.0),
                 offset: Vec2::new(0.0, 0.0),
@@ -505,7 +468,6 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
                 z: 0.18,
             },
             ProjectileAdornmentPart {
-                name: "冰晶横刺",
                 color: Color::srgba(0.88, 1.0, 1.0, 0.88),
                 size: Vec2::new(10.0, 2.0),
                 offset: Vec2::new(0.0, 0.0),
@@ -513,7 +475,6 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
                 z: 0.22,
             },
             ProjectileAdornmentPart {
-                name: "冰晶竖刺",
                 color: Color::srgba(0.72, 0.92, 1.0, 0.82),
                 size: Vec2::new(2.0, 10.0),
                 offset: Vec2::new(0.0, 0.0),
@@ -524,7 +485,6 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
         ],
         ProjectileKind::FirePea => vec![
             ProjectileAdornmentPart {
-                name: "火豌豆尾焰",
                 color: Color::srgba(1.0, 0.16, 0.03, 0.62),
                 size: Vec2::new(8.0, 5.0),
                 offset: Vec2::new(-4.0, 0.0),
@@ -532,7 +492,6 @@ fn projectile_adornment_parts(kind: ProjectileKind) -> Vec<ProjectileAdornmentPa
                 z: 0.16,
             },
             ProjectileAdornmentPart {
-                name: "火豌豆内焰",
                 color: Color::srgba(1.0, 0.86, 0.08, 0.80),
                 size: Vec2::new(6.0, 3.0),
                 offset: Vec2::new(-3.0, 0.0),
@@ -553,21 +512,80 @@ fn projectile_render_assets(
     render_assets: &mut ProjectileRenderAssets,
 ) -> ProjectileRenderAssetSet {
     let key = ProjectileRenderKey::new(kind, radius);
+    if let Some(render) = render_assets.projectiles.get(&key) {
+        return render.clone();
+    }
     render_assets
-        .0
-        .entry(key)
-        .or_insert_with(|| {
-            let definition = catalog.projectile(kind);
-            let visual_scale = projectile_visual_scale(definition.radius, radius);
-            let border_width = definition.visual.border_width * visual_scale;
-            ProjectileRenderAssetSet {
-                border_mesh: meshes.add(Circle::new(radius)),
-                fill_mesh: meshes.add(Circle::new(radius - border_width)),
-                border_material: materials.add(definition.visual.border_color),
-                fill_material: materials.add(definition.visual.fill_color),
-            }
-        })
-        .clone()
+        .material
+        .get_or_insert_with(|| materials.add(ColorMaterial::default()));
+
+    let definition = catalog.projectile(kind);
+    let visual_scale = projectile_visual_scale(definition.radius, radius);
+    let border_width = definition.visual.border_width * visual_scale;
+    let mut adornments = projectile_adornment_parts(kind);
+    adornments.sort_by(|left, right| left.z.total_cmp(&right.z));
+    let mut full = ColoredMeshBuilder::new(2 + adornments.len());
+    full.add_circle(radius, Vec2::ZERO, 0.0, definition.visual.border_color, 32);
+    full.add_circle(
+        radius - border_width,
+        Vec2::ZERO,
+        0.1,
+        definition.visual.fill_color,
+        32,
+    );
+    for part in adornments {
+        full.add_rectangle(
+            part.size * visual_scale,
+            part.offset * visual_scale,
+            part.rotation,
+            part.z,
+            part.color,
+        );
+    }
+
+    let mut simplified = ColoredMeshBuilder::new(1);
+    simplified.add_circle(radius, Vec2::ZERO, 0.0, definition.visual.fill_color, 20);
+    let render = ProjectileRenderAssetSet {
+        full_mesh: meshes.add(full.build()),
+        simplified_mesh: meshes.add(simplified.build()),
+    };
+    render_assets.projectiles.insert(key, render.clone());
+    render
+}
+
+fn sync_projectile_render_quality(
+    mut quality: ResMut<ProjectileRenderQuality>,
+    render_assets: Res<ProjectileRenderAssets>,
+    mut projectiles: Query<(&ProjectileKind, &ProjectileRadius, &mut Mesh2d), With<Projectile>>,
+) {
+    let projectile_count = projectiles.iter().len();
+    let next_detail = projectile_render_detail(projectile_count, quality.detail);
+    if next_detail == quality.detail {
+        return;
+    }
+    quality.detail = next_detail;
+
+    for (kind, radius, mut mesh) in &mut projectiles {
+        let key = ProjectileRenderKey::new(*kind, radius.0);
+        if let Some(render) = render_assets.projectiles.get(&key) {
+            mesh.0 = render.mesh(next_detail);
+        }
+    }
+}
+
+fn projectile_render_detail(
+    count: usize,
+    current: ProjectileRenderDetail,
+) -> ProjectileRenderDetail {
+    match current {
+        ProjectileRenderDetail::Full if count >= PROJECTILE_SIMPLIFICATION_THRESHOLD => {
+            ProjectileRenderDetail::Simplified
+        }
+        ProjectileRenderDetail::Simplified if count <= PROJECTILE_FULL_DETAIL_RESTORE_THRESHOLD => {
+            ProjectileRenderDetail::Full
+        }
+        detail => detail,
+    }
 }
 
 fn physics_projectile_radius(base_radius: f32) -> f32 {
@@ -587,6 +605,7 @@ fn advance_path_projectiles(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut render_assets: ResMut<ProjectileRenderAssets>,
+    render_quality: Res<ProjectileRenderQuality>,
     projectile_count: Query<(), With<Projectile>>,
     mut projectiles: Query<
         (
@@ -629,6 +648,7 @@ fn advance_path_projectiles(
                 *kind,
                 time.elapsed_secs(),
                 &mut total_projectiles,
+                render_quality.detail,
             );
             commands.entity(entity).despawn();
         }
@@ -696,6 +716,7 @@ fn spawn_row_three_physics_line(
     kind: ProjectileKind,
     spawn_seconds: f32,
     projectile_count: &mut usize,
+    render_detail: ProjectileRenderDetail,
 ) {
     let radius = physics_projectile_radius(catalog.projectile(kind).radius);
     let y = layout
@@ -713,7 +734,6 @@ fn spawn_row_three_physics_line(
             index as f32 / (ROW_THREE_PHYSICS_LINE_COUNT - 1) as f32
         };
         let x = left + (right - left) * t + row_three_physics_line_x_offset(index, spawn_seconds);
-        let render_detail = projectile_render_detail(*projectile_count);
         spawn_physics_projectile_entity(
             commands,
             catalog,
@@ -729,6 +749,7 @@ fn spawn_row_three_physics_line(
                 velocity: ROW_THREE_PHYSICS_LINE_INITIAL_VELOCITY,
             },
             render_detail,
+            *projectile_count < PROJECTILE_CCD_THRESHOLD,
         );
         *projectile_count += 1;
     }
@@ -788,20 +809,17 @@ fn spawn_physics_projectile_entity(
     render_assets: &mut ProjectileRenderAssets,
     spec: PhysicsProjectileSpawnSpec,
     render_detail: ProjectileRenderDetail,
+    ccd_enabled: bool,
 ) {
     let definition = catalog.projectile(spec.kind);
     let physics = physics_projectile_parameters(catalog);
     let radius = physics_projectile_radius(definition.radius);
-    let visual_scale = projectile_visual_scale(definition.radius, radius);
     let render =
         projectile_render_assets(spec.kind, radius, catalog, meshes, materials, render_assets);
-    let root_material = match render_detail {
-        ProjectileRenderDetail::Full => render.border_material.clone(),
-        ProjectileRenderDetail::Simplified => render.fill_material.clone(),
-    };
+    let material = render_assets.material.as_ref().unwrap().clone();
     let base = (
-        Mesh2d(render.border_mesh.clone()),
-        MeshMaterial2d(root_material),
+        Mesh2d(render.mesh(render_detail)),
+        MeshMaterial2d(material),
         Transform::from_translation(spec.origin.extend(3.0)),
         Projectile {
             owner: spec.owner,
@@ -828,14 +846,11 @@ fn spawn_physics_projectile_entity(
         Friction::coefficient(physics.friction),
         GravityScale(physics.gravity_scale),
         Ccd {
-            enabled: physics.ccd && render_detail == ProjectileRenderDetail::Full,
+            enabled: physics.ccd && ccd_enabled,
         },
         physics_projectile_groups(),
     );
-    let mut projectile = commands.spawn((base, physics));
-    if render_detail == ProjectileRenderDetail::Full {
-        spawn_projectile_render_children(&mut projectile, &render, spec.kind, visual_scale);
-    }
+    commands.spawn((base, physics));
 }
 
 /// 路径豌豆使用扫掠检测穿过火炬上半部，不依赖 Rapier 碰撞事件。
@@ -897,7 +912,6 @@ fn collect_physics_torchwood_collisions(
 
 /// 统一处理火炬树桩转换，保留原运动管线。
 fn apply_projectile_ignitions(
-    mut commands: Commands,
     mut ignitions: MessageReader<IgniteProjectile>,
     mut params: IgnitionParams,
     mut converted: Local<HashSet<Entity>>,
@@ -907,7 +921,7 @@ fn apply_projectile_ignitions(
         if !converted.insert(request.0) {
             continue;
         }
-        let Ok((mut projectile, mut kind, mut root_mesh, mut root_material, radius, children)) =
+        let Ok((mut projectile, mut kind, mut root_mesh, radius)) =
             params.projectiles.get_mut(request.0)
         else {
             continue;
@@ -918,7 +932,6 @@ fn apply_projectile_ignitions(
         }
         let output_definition = params.catalog.projectile(output_kind);
         let output_damage = output_definition.damage;
-        let visual_scale = projectile_visual_scale(output_definition.radius, radius.0);
         let render = projectile_render_assets(
             output_kind,
             radius.0,
@@ -929,23 +942,7 @@ fn apply_projectile_ignitions(
         );
         projectile.damage = output_damage;
         *kind = output_kind;
-        *root_mesh = Mesh2d(render.border_mesh.clone());
-        if let Some(children) = children {
-            *root_material = MeshMaterial2d(render.border_material);
-            for child in children.iter() {
-                if let Ok((mut fill_mesh, mut fill_material)) = params.fills.get_mut(child) {
-                    *fill_mesh = Mesh2d(render.fill_mesh.clone());
-                    *fill_material = MeshMaterial2d(render.fill_material.clone());
-                } else if params.adornments.contains(child) {
-                    commands.entity(child).despawn();
-                }
-            }
-            commands.entity(request.0).with_children(|parent| {
-                spawn_projectile_adornments(parent, output_kind, visual_scale);
-            });
-        } else {
-            *root_material = MeshMaterial2d(render.fill_material);
-        }
+        root_mesh.0 = render.mesh(params.render_quality.detail);
     }
 }
 
