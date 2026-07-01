@@ -34,6 +34,9 @@ const CHILL_DURATION: Duration = Duration::from_secs(10);
 const CHILL_TIME_SCALE: f32 = 0.5;
 const HORDE_SIMPLIFICATION_THRESHOLD: usize = 4_000;
 const HORDE_FULL_DETAIL_RESTORE_THRESHOLD: usize = 3_200;
+const ZOMBIE_RENDER_Z_BASE: f32 = 2.0;
+const ZOMBIE_RENDER_Z_STEP: f32 = 0.000_001;
+const ZOMBIE_RENDER_Z_SLOTS: u32 = 100_000;
 
 /// 僵尸插件，注册生成、状态更新、行走和攻击系统。
 pub struct ZombiePlugin;
@@ -42,6 +45,7 @@ impl Plugin for ZombiePlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<ZombieRenderAssets>()
             .init_resource::<ZombieRenderQuality>()
+            .init_resource::<ZombieRenderSequence>()
             .add_message::<SpawnZombie>()
             .add_systems(
                 Update,
@@ -53,7 +57,7 @@ impl Plugin for ZombiePlugin {
             )
             .add_systems(
                 Update,
-                (update_zombie_health_debug, update_zombie_equipment_parts)
+                (update_zombie_health_debug, update_zombie_equipment_model)
                     .run_if(in_state(GameState::Playing)),
             )
             .add_systems(
@@ -129,13 +133,20 @@ struct ZombieHealthBarBackground;
 #[derive(Component)]
 struct ZombieNameText;
 
-#[derive(Component)]
-struct ZombieEquipmentPart;
-
 #[derive(Clone)]
 struct ZombieRenderMeshes {
-    body: Handle<Mesh>,
-    equipment: Option<Handle<Mesh>>,
+    intact: Handle<Mesh>,
+    broken_equipment: Handle<Mesh>,
+}
+
+impl ZombieRenderMeshes {
+    fn mesh(&self, equipment_broken: bool) -> Handle<Mesh> {
+        if equipment_broken {
+            self.broken_equipment.clone()
+        } else {
+            self.intact.clone()
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -172,6 +183,9 @@ impl Default for ZombieRenderQuality {
         }
     }
 }
+
+#[derive(Resource, Default)]
+pub(crate) struct ZombieRenderSequence(u32);
 
 #[derive(Component)]
 struct ZombieDebugOverlaySpawned;
@@ -225,6 +239,7 @@ pub(crate) fn spawn_zombies(
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut render_assets: ResMut<ZombieRenderAssets>,
     render_quality: Res<ZombieRenderQuality>,
+    mut render_sequence: Option<ResMut<ZombieRenderSequence>>,
 ) {
     let debug_enabled = debug.as_ref().is_some_and(|context| context.enabled);
 
@@ -248,12 +263,16 @@ pub(crate) fn spawn_zombies(
         );
         let render_meshes = render.meshes(render_quality.detail);
         let material = render_assets.material.as_ref().unwrap().clone();
-        // 根节点同时承担逻辑与合并后的本体渲染，装备保留为独立子网格。
+        let render_z = render_sequence
+            .as_deref_mut()
+            .map(next_zombie_render_z)
+            .unwrap_or(ZOMBIE_RENDER_Z_BASE);
+        // 根节点承担逻辑和完整模型渲染，装备破坏时直接切换共享网格。
         let mut entity = commands.spawn((
             (
-                Mesh2d(render_meshes.body.clone()),
-                MeshMaterial2d(material.clone()),
-                Transform::from_translation(position.extend(2.0)),
+                Mesh2d(render_meshes.mesh(false)),
+                MeshMaterial2d(material),
+                Transform::from_translation(position.extend(render_z)),
                 Zombie {
                     speed: definition.speed,
                     attack_damage: definition.attack_damage,
@@ -288,17 +307,8 @@ pub(crate) fn spawn_zombies(
         if debug_enabled {
             entity.insert(ZombieDebugOverlaySpawned);
         }
-        entity.with_children(|parent| {
-            if let Some(equipment) = &render_meshes.equipment {
-                parent.spawn((
-                    Mesh2d(equipment.clone()),
-                    MeshMaterial2d(material),
-                    Transform::IDENTITY,
-                    ZombieEquipmentPart,
-                    Name::new("Zombie equipment model"),
-                ));
-            }
-            if debug_enabled {
+        if debug_enabled {
+            entity.with_children(|parent| {
                 let full_health = definition.health + definition.equipment_health.unwrap_or(0.0);
                 spawn_zombie_debug_overlay(
                     parent,
@@ -307,8 +317,8 @@ pub(crate) fn spawn_zombies(
                     font,
                     label,
                 );
-            }
-        });
+            });
+        }
     }
 }
 
@@ -340,28 +350,33 @@ fn zombie_render_meshes(
     parts: &[crate::game::model::ModelPart],
     meshes: &mut Assets<Mesh>,
 ) -> ZombieRenderMeshes {
+    let intact = meshes.add(model_parts_mesh(parts));
     let body: Vec<_> = parts
         .iter()
         .copied()
         .filter(|part| !part.is_equipment)
         .collect();
-    let equipment: Vec<_> = parts
-        .iter()
-        .copied()
-        .filter(|part| part.is_equipment)
-        .collect();
+    let has_equipment = body.len() != parts.len();
     ZombieRenderMeshes {
-        body: meshes.add(model_parts_mesh(&body)),
-        equipment: (!equipment.is_empty()).then(|| meshes.add(model_parts_mesh(&equipment))),
+        broken_equipment: if has_equipment {
+            meshes.add(model_parts_mesh(&body))
+        } else {
+            intact.clone()
+        },
+        intact,
     }
+}
+
+fn next_zombie_render_z(sequence: &mut ZombieRenderSequence) -> f32 {
+    let slot = sequence.0 % ZOMBIE_RENDER_Z_SLOTS;
+    sequence.0 = sequence.0.wrapping_add(1);
+    ZOMBIE_RENDER_Z_BASE + slot as f32 * ZOMBIE_RENDER_Z_STEP
 }
 
 fn sync_zombie_render_quality(
     mut quality: ResMut<ZombieRenderQuality>,
     render_assets: Res<ZombieRenderAssets>,
-    zombies: Query<(Entity, &ZombieKind, &Children), With<Zombie>>,
-    mut body_meshes: Query<&mut Mesh2d, (With<Zombie>, Without<ZombieEquipmentPart>)>,
-    mut equipment_meshes: Query<&mut Mesh2d, With<ZombieEquipmentPart>>,
+    mut zombies: Query<(&ZombieKind, Option<&EquipmentHealth>, &mut Mesh2d), With<Zombie>>,
 ) {
     let zombie_count = zombies.iter().len();
     let next_detail = render_detail_with_hysteresis(
@@ -375,21 +390,12 @@ fn sync_zombie_render_quality(
     }
     quality.detail = next_detail;
 
-    for (entity, kind, children) in &zombies {
+    for (kind, equipment, mut mesh) in &mut zombies {
         let Some(render) = render_assets.models.get(kind) else {
             continue;
         };
         let desired = render.meshes(next_detail);
-        if let Ok(mut mesh) = body_meshes.get_mut(entity) {
-            mesh.0 = desired.body.clone();
-        }
-        if let Some(equipment) = &desired.equipment {
-            for child in children.iter() {
-                if let Ok(mut mesh) = equipment_meshes.get_mut(child) {
-                    mesh.0 = equipment.clone();
-                }
-            }
-        }
+        mesh.0 = desired.mesh(equipment.is_some_and(EquipmentHealth::is_broken));
     }
 }
 
@@ -570,28 +576,25 @@ fn update_zombie_health_debug(
     }
 }
 
-/// 装备血量耗尽后隐藏对应的模型部件。
-fn update_zombie_equipment_parts(
-    zombies: Query<
-        (&Children, &EquipmentHealth),
+/// 装备血量耗尽后切换为不含装备的合并模型。
+fn update_zombie_equipment_model(
+    render_assets: Res<ZombieRenderAssets>,
+    render_quality: Res<ZombieRenderQuality>,
+    mut zombies: Query<
+        (&ZombieKind, &EquipmentHealth, &mut Mesh2d),
         (
             With<Zombie>,
             Or<(Added<EquipmentHealth>, Changed<EquipmentHealth>)>,
         ),
     >,
-    mut equipment_parts: Query<&mut Visibility, With<ZombieEquipmentPart>>,
 ) {
-    for (children, equipment) in &zombies {
-        let visibility = if !equipment.is_broken() {
-            Visibility::Visible
-        } else {
-            Visibility::Hidden
+    for (kind, equipment, mut mesh) in &mut zombies {
+        let Some(render) = render_assets.models.get(kind) else {
+            continue;
         };
-        for child in children.iter() {
-            if let Ok(mut child_visibility) = equipment_parts.get_mut(child) {
-                *child_visibility = visibility;
-            }
-        }
+        mesh.0 = render
+            .meshes(render_quality.detail)
+            .mesh(equipment.is_broken());
     }
 }
 
