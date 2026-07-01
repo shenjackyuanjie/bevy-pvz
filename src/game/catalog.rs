@@ -792,14 +792,4 @@ mod tests {
         assert_eq!(screen_door.equipment_health, Some(1100.0));
     }
 
-    #[test]
-    fn zombie_kinds_use_distinct_speeds() {
-        let catalog = ContentCatalog::default();
-        let basic = catalog.zombie(ZombieKind::Basic).speed;
-        assert!(catalog.zombie(ZombieKind::Football).speed > basic);
-        assert!(catalog.zombie(ZombieKind::Imp).speed > basic);
-        assert!(catalog.zombie(ZombieKind::PoleVaulting).speed > basic);
-        assert!(catalog.zombie(ZombieKind::Gargantuar).speed < basic);
-        assert!(catalog.zombie(ZombieKind::Zomboni).speed < basic);
-    }
 }

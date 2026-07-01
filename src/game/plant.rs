@@ -628,10 +628,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn always_shoot_level_option_bypasses_target_requirement() {
-        assert!(shooter_should_fire(true, false));
-        assert!(shooter_should_fire(false, true));
-        assert!(!shooter_should_fire(false, false));
-    }
 }

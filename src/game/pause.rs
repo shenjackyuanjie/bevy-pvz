@@ -43,6 +43,9 @@ struct PauseOverlay;
 #[derive(Component)]
 struct PauseDebugGallery;
 
+const PAUSE_GALLERY_BASE_HEIGHT: f32 = 900.0;
+const PAUSE_GALLERY_MAX_SCALE: f32 = 1.25;
+
 pub fn game_not_paused(pause: Res<GamePause>) -> bool {
     !pause.paused
 }
@@ -146,15 +149,20 @@ fn spawn_pause_debug_gallery(
 ) {
     let half_width = window.resolution.width() * 0.5;
     let half_height = window.resolution.height() * 0.5;
+    let gallery_scale = pause_gallery_scale(window.resolution.height());
     let font = assets.chinese_font.clone();
 
     spawn_gallery_title(
         commands,
-        Vec2::new(-half_width + 80.0, half_height - 54.0),
+        Vec2::new(
+            -half_width + 80.0 * gallery_scale,
+            half_height - 54.0 * gallery_scale,
+        ),
         "植物",
         font.clone(),
+        gallery_scale,
     );
-    let plant_cell = Vec2::new(118.0, 104.0);
+    let plant_cell = Vec2::new(118.0, 104.0) * gallery_scale;
     let plant_start_x = -(PlantKind::ALL.len() as f32 - 1.0) * plant_cell.x * 0.5;
     for (index, kind) in PlantKind::ALL.iter().copied().enumerate() {
         let definition = catalog.plant(kind);
@@ -162,28 +170,33 @@ fn spawn_pause_debug_gallery(
             commands,
             Vec2::new(
                 plant_start_x + index as f32 * plant_cell.x,
-                half_height - 124.0,
+                half_height - 124.0 * gallery_scale,
             ),
             definition.display_name,
             font.clone(),
             plant_model_parts(kind, 1.0),
-            0.72,
+            0.72 * gallery_scale,
             plant_cell,
+            gallery_scale,
         );
     }
 
     spawn_gallery_title(
         commands,
-        Vec2::new(-half_width + 80.0, half_height - 216.0),
+        Vec2::new(
+            -half_width + 80.0 * gallery_scale,
+            half_height - 216.0 * gallery_scale,
+        ),
         "僵尸",
         font.clone(),
+        gallery_scale,
     );
-    let zombie_cell = Vec2::new(124.0, 96.0);
+    let zombie_cell = Vec2::new(124.0, 96.0) * gallery_scale;
     let zombie_columns = ((window.resolution.width() / zombie_cell.x).floor() as usize)
         .clamp(6, 9)
         .min(ZombieKind::ALL.len());
     let zombie_start_x = -(zombie_columns as f32 - 1.0) * zombie_cell.x * 0.5;
-    let zombie_start_y = half_height - 286.0;
+    let zombie_start_y = half_height - 286.0 * gallery_scale;
     for (index, kind) in ZombieKind::ALL.iter().copied().enumerate() {
         let column = index % zombie_columns;
         let row = index / zombie_columns;
@@ -197,18 +210,29 @@ fn spawn_pause_debug_gallery(
             definition.display_name,
             font.clone(),
             zombie_model_parts(kind, 1.0),
-            0.43,
+            0.43 * gallery_scale,
             zombie_cell,
+            gallery_scale,
         );
     }
 }
 
-fn spawn_gallery_title(commands: &mut Commands, position: Vec2, text: &str, font: Handle<Font>) {
+fn pause_gallery_scale(window_height: f32) -> f32 {
+    (window_height / PAUSE_GALLERY_BASE_HEIGHT).clamp(1.0, PAUSE_GALLERY_MAX_SCALE)
+}
+
+fn spawn_gallery_title(
+    commands: &mut Commands,
+    position: Vec2,
+    text: &str,
+    font: Handle<Font>,
+    gallery_scale: f32,
+) {
     commands.spawn((
         Text2d::new(text),
         TextFont {
             font,
-            font_size: 18.0,
+            font_size: 18.0 * gallery_scale,
             ..default()
         },
         TextColor(Color::srgb(1.0, 0.92, 0.62)),
@@ -228,6 +252,7 @@ fn spawn_gallery_item(
     parts: Vec<crate::game::model::ModelPart>,
     scale: f32,
     panel_size: Vec2,
+    gallery_scale: f32,
 ) {
     let mut item = commands.spawn((
         Transform::from_translation(position.extend(86.0)),
@@ -248,8 +273,12 @@ fn spawn_gallery_item(
         for part in parts {
             parent.spawn((
                 Sprite::from_color(part.color, part.size * scale),
-                Transform::from_xyz(part.offset.x * scale, part.offset.y * scale + 7.0, part.z)
-                    .with_rotation(Quat::from_rotation_z(part.rotation)),
+                Transform::from_xyz(
+                    part.offset.x * scale,
+                    part.offset.y * scale + 7.0 * gallery_scale,
+                    part.z,
+                )
+                .with_rotation(Quat::from_rotation_z(part.rotation)),
                 Name::new(part.name),
             ));
         }
@@ -257,7 +286,7 @@ fn spawn_gallery_item(
             Text2d::new(label),
             TextFont {
                 font,
-                font_size: 9.5,
+                font_size: 9.5 * gallery_scale,
                 ..default()
             },
             TextColor(Color::srgb(0.96, 0.96, 0.88)),

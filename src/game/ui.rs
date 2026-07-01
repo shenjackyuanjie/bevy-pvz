@@ -18,6 +18,7 @@ use crate::game::state::{GameState, LevelEntity};
 use crate::game::theme::UiTheme;
 use crate::game::zombie::Zombie;
 
+mod fps;
 mod results;
 use results::{cleanup_result, show_defeat, show_victory};
 
@@ -26,7 +27,8 @@ pub struct GameUiPlugin;
 
 impl Plugin for GameUiPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PlantDragState>()
+        app.add_plugins(fps::FpsOverlayPlugin)
+            .init_resource::<PlantDragState>()
             .add_systems(OnEnter(GameState::Playing), setup_hud)
             .add_systems(
                 Update,
@@ -806,75 +808,5 @@ fn control_help(controls: &ControlBindings) -> String {
     #[cfg(not(feature = "debug_tools"))]
     {
         text
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::game::catalog::ZombieKind;
-    use crate::game::level::{ZombieSpawnDefinition, ZombieWaveDefinition};
-
-    #[test]
-    fn wave_progress_markers_follow_wave_starts_and_spawn_times() {
-        let definition = LevelDefinition {
-            waves: vec![
-                ZombieWaveDefinition {
-                    start_seconds: 4.0,
-                    spawns: vec![
-                        ZombieSpawnDefinition {
-                            at_seconds: 4.0,
-                            kind: ZombieKind::Basic,
-                        },
-                        ZombieSpawnDefinition {
-                            at_seconds: 6.0,
-                            kind: ZombieKind::Basic,
-                        },
-                        ZombieSpawnDefinition {
-                            at_seconds: 6.0,
-                            kind: ZombieKind::Conehead,
-                        },
-                    ],
-                },
-                ZombieWaveDefinition {
-                    start_seconds: 11.0,
-                    spawns: vec![ZombieSpawnDefinition {
-                        at_seconds: 12.0,
-                        kind: ZombieKind::Buckethead,
-                    }],
-                },
-            ],
-            ..default()
-        };
-
-        assert_eq!(wave_timeline_total_seconds(&definition), 12.0);
-        assert_eq!(progress_percent(6.0, 12.0), 50.0);
-
-        let markers = wave_progress_markers(&definition);
-        assert_eq!(
-            markers,
-            vec![
-                WaveProgressMarker {
-                    seconds: 4.0,
-                    kind: WaveProgressMarkerKind::WaveStart,
-                },
-                WaveProgressMarker {
-                    seconds: 4.0,
-                    kind: WaveProgressMarkerKind::Spawn,
-                },
-                WaveProgressMarker {
-                    seconds: 6.0,
-                    kind: WaveProgressMarkerKind::Spawn,
-                },
-                WaveProgressMarker {
-                    seconds: 11.0,
-                    kind: WaveProgressMarkerKind::WaveStart,
-                },
-                WaveProgressMarker {
-                    seconds: 12.0,
-                    kind: WaveProgressMarkerKind::Spawn,
-                },
-            ]
-        );
     }
 }

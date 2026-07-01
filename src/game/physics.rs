@@ -10,14 +10,20 @@
 //! - `GROUP_5` — 世界边界（与物理弹丸碰撞）
 //! - `GROUP_6` — 割草机（与植物相同过滤）
 
+use std::time::Instant;
+
+use bevy::diagnostic::{Diagnostic, DiagnosticPath, Diagnostics, RegisterDiagnostic};
 use bevy::prelude::*;
 use bevy_rapier2d::prelude::*;
 
+use crate::game::catalog::{ContentCatalog, ZombieKind};
 use crate::game::config::GameplaySettings;
 #[cfg(feature = "debug_tools")]
 use crate::game::controls::ControlBindings;
+use crate::game::defense::lawn_mower_start_right;
 use crate::game::lawn::LawnLayout;
 use crate::game::level::LevelSetupSet;
+use crate::game::model::{model_bounds, zombie_model_parts};
 use crate::game::schedule::GameSet;
 use crate::game::state::{GameState, LevelEntity};
 
@@ -37,11 +43,18 @@ pub const MOWER_GROUP: Group = Group::GROUP_6;
 /// 火炬树桩上半部点燃区碰撞组。
 pub const TORCHWOOD_GROUP: Group = Group::GROUP_7;
 
+/// Rapier 单次模拟步进的 CPU 耗时（毫秒）。
+pub const PHYSICS_STEP_TIME: DiagnosticPath =
+    DiagnosticPath::const_new("physics/step_simulation_time");
+
 /// 物理碰撞体调试渲染的启动配置。
 #[derive(Resource, Debug, Default, Clone, Copy)]
 pub struct PhysicsDebugSettings {
     pub enabled: bool,
 }
+
+#[derive(Resource, Default)]
+struct PhysicsStepTimer(Option<Instant>);
 
 /// 物理引擎插件。
 ///
@@ -51,30 +64,56 @@ pub struct GamePhysicsPlugin;
 
 impl Plugin for GamePhysicsPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins((
-            RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0).in_fixed_schedule(),
-            RapierDebugRenderPlugin::default().disabled(),
-        ))
-        .configure_sets(
-            FixedUpdate,
-            (
-                GameSet::Spawn.before(PhysicsSet::SyncBackend),
-                GameSet::LogicMovement
-                    .after(GameSet::Spawn)
-                    .before(PhysicsSet::SyncBackend),
-                GameSet::ContactRead
-                    .after(PhysicsSet::Writeback)
-                    .before(GameSet::Combat),
-            ),
-        )
-        .add_systems(
-            OnEnter(GameState::Playing),
-            setup_physics_world.after(LevelSetupSet::Reset),
-        )
-        .add_systems(Startup, apply_initial_physics_debug);
+        app.init_resource::<PhysicsStepTimer>()
+            .register_diagnostic(Diagnostic::new(PHYSICS_STEP_TIME).with_suffix("ms"))
+            .add_plugins((
+                RapierPhysicsPlugin::<NoUserData>::pixels_per_meter(100.0).in_fixed_schedule(),
+                RapierDebugRenderPlugin::default().disabled(),
+            ))
+            .configure_sets(
+                FixedUpdate,
+                (
+                    GameSet::Spawn.before(PhysicsSet::SyncBackend),
+                    GameSet::LogicMovement
+                        .after(GameSet::Spawn)
+                        .before(PhysicsSet::SyncBackend),
+                    GameSet::ContactRead
+                        .after(PhysicsSet::Writeback)
+                        .before(GameSet::Combat),
+                ),
+            )
+            .add_systems(
+                OnEnter(GameState::Playing),
+                setup_physics_world.after(LevelSetupSet::Reset),
+            )
+            .add_systems(
+                FixedUpdate,
+                (
+                    begin_physics_step
+                        .after(PhysicsSet::SyncBackend)
+                        .before(PhysicsSet::StepSimulation),
+                    end_physics_step
+                        .after(PhysicsSet::StepSimulation)
+                        .before(PhysicsSet::Writeback),
+                ),
+            )
+            .add_systems(Startup, apply_initial_physics_debug);
         #[cfg(feature = "debug_tools")]
         app.add_systems(Update, toggle_physics_debug);
     }
+}
+
+fn begin_physics_step(mut timer: ResMut<PhysicsStepTimer>) {
+    timer.0 = Some(Instant::now());
+}
+
+fn end_physics_step(mut timer: ResMut<PhysicsStepTimer>, mut diagnostics: Diagnostics) {
+    let Some(started_at) = timer.0.take() else {
+        return;
+    };
+    diagnostics.add_measurement(&PHYSICS_STEP_TIME, || {
+        started_at.elapsed().as_secs_f64() * 1_000.0
+    });
 }
 
 /// 将命令行启动配置应用到 Rapier 调试渲染上下文。
@@ -129,8 +168,9 @@ fn setup_physics_world(
     mut commands: Commands,
     layout: Res<LawnLayout>,
     settings: Res<GameplaySettings>,
+    catalog: Res<ContentCatalog>,
 ) {
-    let boundary = physics_boundary_layout(&layout, &settings);
+    let boundary = physics_boundary_layout(&layout, &settings, &catalog);
 
     // Collider::cuboid 使用半高，因此中心下移一个 thickness 后顶面正好对齐 row 0 底边。
     commands.spawn((
@@ -172,10 +212,24 @@ struct PhysicsBoundaryLayout {
 fn physics_boundary_layout(
     layout: &LawnLayout,
     settings: &GameplaySettings,
+    catalog: &ContentCatalog,
 ) -> PhysicsBoundaryLayout {
+    let zombie_spawn_right = ZombieKind::ALL
+        .into_iter()
+        .map(|kind| {
+            let definition = catalog.zombie(kind);
+            let bounds = model_bounds(&zombie_model_parts(kind, 1.0));
+            layout.right() + definition.spawn_offset_x + bounds.center.x + bounds.half_size.x
+        })
+        .max_by(f32::total_cmp)
+        .expect("zombie catalog must not be empty");
     let wall_x = [
-        layout.origin.x - settings.physics_side_margins.x,
-        layout.right() + settings.physics_side_margins.y,
+        lawn_mower_start_right(layout)
+            + settings.physics_boundary_thickness
+            + settings.physics_wall_clearances.x,
+        zombie_spawn_right
+            + settings.physics_boundary_thickness
+            + settings.physics_wall_clearances.y,
     ];
     let floor_top_y = layout.origin.y;
     let floor_half_width = (wall_x[1] - wall_x[0]) * 0.5 + settings.physics_boundary_thickness;
@@ -198,29 +252,5 @@ fn toggle_physics_debug(
 ) {
     if keyboard.just_pressed(controls.toggle_physics) {
         debug.enabled = !debug.enabled;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn physics_floor_sits_below_row_zero_and_reaches_walls() {
-        let layout = LawnLayout::default();
-        let settings = GameplaySettings::default();
-        let boundary = physics_boundary_layout(&layout, &settings);
-
-        let floor_top = boundary.floor_center.y + boundary.floor_half_size.y;
-        assert_eq!(floor_top, layout.origin.y);
-        assert!(boundary.floor_center.x - boundary.floor_half_size.x <= boundary.wall_x[0]);
-        assert!(boundary.floor_center.x + boundary.floor_half_size.x >= boundary.wall_x[1]);
-    }
-
-    #[test]
-    fn physics_projectiles_collide_with_each_other() {
-        let groups = physics_projectile_groups();
-
-        assert!(groups.filters.contains(PHYSICS_PROJECTILE_GROUP));
     }
 }

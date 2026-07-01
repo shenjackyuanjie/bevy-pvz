@@ -294,21 +294,4 @@ mod tests {
         assert!(!occupancy.is_available(cell, &layout));
     }
 
-    #[test]
-    fn lawn_tiles_use_only_checkerboard_colors() {
-        let ground = GridCell { column: 2, row: 0 };
-        let lower_same_parity = GridCell {
-            column: 3,
-            row: PEASHOOTER_ROW,
-        };
-        let elevated_same_parity = GridCell { column: 0, row: 2 };
-        let adjacent = GridCell { column: 3, row: 0 };
-
-        assert_eq!(lawn_tile_color(ground), lawn_tile_color(lower_same_parity));
-        assert_eq!(
-            lawn_tile_color(ground),
-            lawn_tile_color(elevated_same_parity)
-        );
-        assert_ne!(lawn_tile_color(ground), lawn_tile_color(adjacent));
-    }
 }

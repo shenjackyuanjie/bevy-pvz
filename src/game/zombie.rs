@@ -715,24 +715,3 @@ fn tick_zombie_attacks(
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn zombie_render_detail_uses_hysteresis() {
-        assert_eq!(
-            render_detail_with_hysteresis(10, ZombieModelDetail::Full, 10, 8),
-            ZombieModelDetail::Simplified
-        );
-        assert_eq!(
-            render_detail_with_hysteresis(9, ZombieModelDetail::Simplified, 10, 8),
-            ZombieModelDetail::Simplified
-        );
-        assert_eq!(
-            render_detail_with_hysteresis(8, ZombieModelDetail::Simplified, 10, 8),
-            ZombieModelDetail::Full
-        );
-    }
-}

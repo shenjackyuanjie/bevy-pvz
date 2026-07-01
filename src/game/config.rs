@@ -6,7 +6,8 @@ use bevy::prelude::*;
 pub struct GameplaySettings {
     pub sun_pickup_radius: f32,
     pub defeat_offset_x: f32,
-    pub physics_side_margins: Vec2,
+    /// 左墙距小推车右缘、右墙距最宽僵尸出生右缘的间隙。
+    pub physics_wall_clearances: Vec2,
     pub physics_boundary_thickness: f32,
     pub physics_floor_friction: f32,
     pub physics_wall_half_height: f32,
@@ -17,10 +18,10 @@ impl Default for GameplaySettings {
         Self {
             sun_pickup_radius: 28.0,
             defeat_offset_x: 16.0,
-            physics_side_margins: Vec2::new(120.0, 220.0),
+            physics_wall_clearances: Vec2::new(8.0, 16.0),
             physics_boundary_thickness: 10.0,
             physics_floor_friction: 0.65,
-            physics_wall_half_height: 400.0,
+            physics_wall_half_height: 600.0,
         }
     }
 }
@@ -30,8 +31,8 @@ impl GameplaySettings {
         let values = [
             ("sun_pickup_radius", self.sun_pickup_radius),
             ("defeat_offset_x", self.defeat_offset_x),
-            ("physics_side_margins.x", self.physics_side_margins.x),
-            ("physics_side_margins.y", self.physics_side_margins.y),
+            ("physics_wall_clearances.x", self.physics_wall_clearances.x),
+            ("physics_wall_clearances.y", self.physics_wall_clearances.y),
             (
                 "physics_boundary_thickness",
                 self.physics_boundary_thickness,

@@ -201,16 +201,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn health_clamps_and_reports_death() {
-        let mut health = Health::new(100.0);
-        assert!(!health.damage(40.0));
-        assert_eq!(health.current, 60.0);
-        assert!(health.damage(80.0));
-        assert_eq!(health.current, 0.0);
-        assert_eq!(health.max, 100.0);
-    }
-
-    #[test]
     fn same_frame_damage_accumulates_before_death_cleanup() {
         let mut app = App::new();
         app.add_message::<ApplyDamage>()

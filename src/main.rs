@@ -13,7 +13,7 @@ use game::physics::PhysicsDebugSettings;
 
 /// 程序入口点。
 ///
-/// 创建 Bevy 应用，配置 1440×900 的可调整大小窗口（标题 "Bevy PvZ - Rapier 2D prototype"），
+/// 创建 Bevy 应用，配置 1920×1080 的可调整大小窗口（标题 "Bevy PvZ - Rapier 2D prototype"），
 /// 添加默认插件集和自定义 [`GamePlugin`]，然后启动运行循环。
 fn main() {
     let options = match parse_cli(std::env::args().skip(1)) {
@@ -42,7 +42,7 @@ fn main() {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
             title: "Bevy PvZ - Rapier 2D prototype".into(),
-            resolution: WindowResolution::new(1440, 900),
+            resolution: WindowResolution::new(1920, 1080),
             present_mode: PresentMode::AutoVsync,
             resizable: true,
             ..default()

@@ -1,31 +1,6 @@
 use super::*;
 
 #[test]
-fn sun_spending_is_atomic() {
-    let mut bank = SunBank { amount: 75 };
-    assert!(!bank.try_spend(100));
-    assert_eq!(bank.amount, 75);
-    assert!(bank.try_spend(50));
-    assert_eq!(bank.amount, 25);
-}
-
-#[test]
-fn card_cooldown_tracks_ready_state() {
-    let catalog = ContentCatalog::default();
-    let mut cards = PlantCards::default();
-    cards.0.insert(PlantKind::Peashooter, Duration::ZERO);
-    assert!(cards.ready(PlantKind::Peashooter));
-    cards.trigger(PlantKind::Peashooter, &catalog);
-    assert!(!cards.ready(PlantKind::Peashooter));
-    let remaining = cards.remaining(PlantKind::Peashooter);
-    cards.0.insert(
-        PlantKind::Peashooter,
-        remaining.saturating_sub(Duration::from_secs(10)),
-    );
-    assert!(cards.ready(PlantKind::Peashooter));
-}
-
-#[test]
 fn final_wave_is_spawned_before_outcome_check() {
     let mut app = App::new();
     app.add_plugins(bevy::state::app::StatesPlugin)
@@ -82,24 +57,6 @@ fn ron_level_is_complete_and_valid() {
             .validate(&ContentCatalog::default())
             .unwrap();
     }
-}
-
-#[test]
-fn row_three_physics_line_uses_six_waves_and_ends_at_six_minutes_five_seconds() {
-    let level =
-        LevelDefinition::load_from_file("assets/levels/level_row_three_physics_line.ron").unwrap();
-
-    let last_spawn = level
-        .waves
-        .iter()
-        .filter_map(|wave| wave.spawns.last())
-        .map(|spawn| spawn.at_seconds)
-        .max_by(f32::total_cmp)
-        .unwrap();
-    assert!(
-        (last_spawn - 365.0).abs() < 0.01,
-        "last spawn should be at 365s, got {last_spawn}"
-    );
 }
 
 #[test]

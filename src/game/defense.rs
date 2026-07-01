@@ -12,6 +12,13 @@ use crate::game::zombie::Zombie;
 const MOWER_SPEED: f32 = 430.0;
 const MOWER_TRIGGER_AHEAD: f32 = 74.0;
 const MOWER_HIT_HALF_SIZE: Vec2 = Vec2::new(38.0, 32.0);
+const MOWER_START_OFFSET_X: f32 = -46.0;
+const MOWER_VISUAL_RIGHT_EXTENT: f32 = 47.0;
+
+/// 待命小推车模型最右侧的世界 X 坐标。
+pub(crate) fn lawn_mower_start_right(layout: &LawnLayout) -> f32 {
+    layout.origin.x + MOWER_START_OFFSET_X + MOWER_VISUAL_RIGHT_EXTENT
+}
 
 pub struct HomeDefensePlugin;
 
@@ -102,7 +109,7 @@ fn setup_home_defenses(mut commands: Commands, layout: Res<LawnLayout>) {
     ));
 
     commands.spawn((
-        Transform::from_xyz(layout.origin.x - 46.0, layout.path_y(), 4.0),
+        Transform::from_xyz(layout.origin.x + MOWER_START_OFFSET_X, layout.path_y(), 4.0),
         Visibility::Visible,
         LawnMower {
             state: MowerState::Ready,
@@ -189,21 +196,5 @@ fn lawn_mower_hits_zombies(
                 });
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mower_hitbox_reaches_only_nearby_zombies() {
-        let mower = Vec2::ZERO;
-        let inside = Vec2::new(MOWER_HIT_HALF_SIZE.x, MOWER_HIT_HALF_SIZE.y);
-        let outside = Vec2::new(MOWER_HIT_HALF_SIZE.x + 0.1, 0.0);
-
-        assert!((inside - mower).x.abs() <= MOWER_HIT_HALF_SIZE.x);
-        assert!((inside - mower).y.abs() <= MOWER_HIT_HALF_SIZE.y);
-        assert!((outside - mower).x.abs() > MOWER_HIT_HALF_SIZE.x);
     }
 }

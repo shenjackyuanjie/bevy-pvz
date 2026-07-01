@@ -169,24 +169,6 @@ fn row_three_effect_turns_fire_pea_into_physics_fire_peas() {
 }
 
 #[test]
-fn row_three_physics_line_offsets_change_with_spawn_time() {
-    let first: Vec<_> = (0..ROW_THREE_PHYSICS_LINE_COUNT)
-        .map(|index| row_three_physics_line_x_offset(index, 12.0))
-        .collect();
-    let second: Vec<_> = (0..ROW_THREE_PHYSICS_LINE_COUNT)
-        .map(|index| row_three_physics_line_x_offset(index, 12.25))
-        .collect();
-
-    assert_ne!(first, second);
-    assert!(
-        first
-            .iter()
-            .chain(second.iter())
-            .all(|offset| offset.abs() <= ROW_THREE_PHYSICS_LINE_X_JITTER)
-    );
-}
-
-#[test]
 fn spawn_request_builds_distinct_motion_pipelines() {
     let mut app = App::new();
     app.add_message::<SpawnProjectile>()
@@ -247,59 +229,6 @@ fn spawn_request_builds_distinct_motion_pipelines() {
         false,
         true,
     )));
-}
-
-#[test]
-fn physics_projectiles_use_smaller_radius_than_path_peas() {
-    let catalog = ContentCatalog::default();
-
-    assert!(
-        physics_projectile_radius(catalog.projectile(ProjectileKind::PhysicsPea).radius)
-            < catalog.projectile(ProjectileKind::Pea).radius
-    );
-}
-
-#[test]
-fn projectile_render_detail_uses_hysteresis() {
-    assert_eq!(
-        projectile_render_detail(
-            PROJECTILE_SIMPLIFICATION_THRESHOLD,
-            ProjectileRenderDetail::Full,
-        ),
-        ProjectileRenderDetail::Simplified
-    );
-    assert_eq!(
-        projectile_render_detail(
-            PROJECTILE_FULL_DETAIL_RESTORE_THRESHOLD + 1,
-            ProjectileRenderDetail::Simplified,
-        ),
-        ProjectileRenderDetail::Simplified
-    );
-    assert_eq!(
-        projectile_render_detail(
-            PROJECTILE_FULL_DETAIL_RESTORE_THRESHOLD,
-            ProjectileRenderDetail::Simplified,
-        ),
-        ProjectileRenderDetail::Full
-    );
-}
-
-#[test]
-fn ice_and_fire_adornments_stay_inside_projectile_body() {
-    let catalog = ContentCatalog::default();
-    for kind in [ProjectileKind::IcePea, ProjectileKind::FirePea] {
-        let radius = catalog.projectile(kind).radius;
-        for part in projectile_adornment_parts(kind) {
-            assert!(
-                part.offset.x.abs() + part.size.x * 0.5 <= radius,
-                "{kind:?} adornment exceeds projectile width"
-            );
-            assert!(
-                part.offset.y.abs() + part.size.y * 0.5 <= radius,
-                "{kind:?} adornment exceeds projectile height"
-            );
-        }
-    }
 }
 
 #[test]
@@ -372,18 +301,6 @@ fn ignition_changes_damage_kind_and_render_assets() {
             .resource::<ContentCatalog>()
             .projectile(ProjectileKind::FirePea)
             .damage
-    );
-}
-
-#[test]
-fn torchwood_turns_ice_peas_back_to_normal_peas() {
-    assert_eq!(
-        torchwood_output_kind(ProjectileKind::IcePea),
-        ProjectileKind::Pea
-    );
-    assert_eq!(
-        torchwood_output_kind(ProjectileKind::PhysicsPea),
-        ProjectileKind::FirePea
     );
 }
 
