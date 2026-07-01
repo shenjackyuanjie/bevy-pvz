@@ -246,6 +246,7 @@ fn reset_uses_the_current_level_definition() {
         .insert_resource(ShovelMode {
             preview: Some(Entity::PLACEHOLDER),
         })
+        .init_resource::<SunSweepState>()
         .insert_resource(LawnLayout::default())
         .insert_resource(CellOccupancy::default())
         .add_systems(Update, reset_level_runtime);

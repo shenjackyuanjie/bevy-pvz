@@ -4,7 +4,7 @@
 //!
 //! - **波次生成**：按时间线自动生成僵尸（[`tick_wave_timeline`]）
 //! - **太阳经济**：太阳存款（[`SunBank`]）与植物卡片冷却（[`PlantCards`]）
-//! - **鼠标交互**：左键点击收集太阳（[`handle_world_clicks`]）
+//! - **鼠标交互**：左键点击或按住扫过太阳进行收集（[`handle_world_clicks`]）
 //! - **胜负判定**：僵尸突破房子左侧 → 失败；清空所有僵尸 → 胜利
 //! - **太阳动画**：太阳拾取物上下浮动并旋转
 
@@ -59,6 +59,7 @@ impl Plugin for LevelPlugin {
         })
         .insert_resource(PlantCards(initial_cards))
         .init_resource::<ShovelMode>()
+        .init_resource::<SunSweepState>()
         .init_resource::<LevelRuntime>()
         .add_message::<SpawnSun>()
         .add_message::<LevelWon>()
@@ -474,6 +475,12 @@ pub struct SunPickup {
     age: f32,
 }
 
+#[derive(Resource, Debug, Default)]
+struct SunSweepState {
+    previous_world: Option<Vec2>,
+    blocked_by_ui: bool,
+}
+
 /// 生成太阳的请求消息，由向日葵系统发出。
 #[derive(Message, Debug, Clone, Copy)]
 pub struct SpawnSun {
@@ -498,6 +505,7 @@ fn reset_level_runtime(
     mut bank: ResMut<SunBank>,
     mut cards: ResMut<PlantCards>,
     mut shovel: ResMut<ShovelMode>,
+    mut sun_sweep: ResMut<SunSweepState>,
     mut layout: ResMut<LawnLayout>,
     mut occupancy: ResMut<CellOccupancy>,
 ) {
@@ -509,6 +517,7 @@ fn reset_level_runtime(
         .map(|card| (card.plant, Duration::ZERO))
         .collect();
     shovel.preview = None;
+    *sun_sweep = SunSweepState::default();
     *layout = definition.lawn.clone();
     occupancy.0.clear();
 }
@@ -623,23 +632,28 @@ struct WorldClickParams<'w, 's> {
     ui_buttons: Query<'w, 's, &'static Interaction, With<Button>>,
     pickups: Query<'w, 's, (Entity, &'static Transform, &'static SunPickup)>,
     bank: ResMut<'w, SunBank>,
+    sweep: ResMut<'w, SunSweepState>,
 }
 
-/// 处理鼠标左键点击。
+/// 处理鼠标点击和按住后的连续扫掠收集。
 ///
-/// 逻辑顺序：
-/// 1. 将屏幕坐标转换为世界坐标
-/// 2. 检测是否点到了太阳拾取物（28 像素范围内），是则收集并销毁
+/// 从世界区域开始按住时，将鼠标相邻两帧位置连成线段并收集扫过的太阳。
+/// 从 UI 按钮开始的拖拽会保持屏蔽，避免植物和铲子操作误收集。
 fn handle_world_clicks(mut params: WorldClickParams) {
-    if !params.mouse.just_pressed(params.controls.place_or_collect) {
+    let button = params.controls.place_or_collect;
+    if !params.mouse.pressed(button) {
+        *params.sweep = SunSweepState::default();
         return;
     }
-    // Bevy UI 与世界共用鼠标输入；点击按钮时不能让同一次点击穿透到草坪。
-    if params
-        .ui_buttons
-        .iter()
-        .any(|interaction| *interaction == Interaction::Pressed)
-    {
+    if params.mouse.just_pressed(button) {
+        // 从 UI 开始的整段拖拽都不收集，避免植物卡片和铲子拖拽误触草坪。
+        params.sweep.blocked_by_ui = params
+            .ui_buttons
+            .iter()
+            .any(|interaction| *interaction == Interaction::Pressed);
+        params.sweep.previous_world = None;
+    }
+    if params.sweep.blocked_by_ui {
         return;
     }
     let Some(cursor) = params.window.cursor_position() else {
@@ -647,18 +661,33 @@ fn handle_world_clicks(mut params: WorldClickParams) {
     };
     let (camera, camera_transform) = *params.camera;
     let Ok(world) = camera.viewport_to_world_2d(camera_transform, cursor) else {
+        params.sweep.previous_world = None;
         return;
     };
 
-    // 一次点击收集鼠标附近的全部阳光，避免重叠阳光需要反复点击。
+    let sweep_start = params.sweep.previous_world.unwrap_or(world);
+    params.sweep.previous_world = Some(world);
+    let pickup_radius_squared = params.settings.sun_pickup_radius.powi(2);
     let mut collected = 0;
     for (entity, transform, pickup) in &params.pickups {
-        if transform.translation.truncate().distance(world) <= params.settings.sun_pickup_radius {
+        if point_segment_distance_squared(transform.translation.truncate(), sweep_start, world)
+            <= pickup_radius_squared
+        {
             collected += pickup.value;
             params.commands.entity(entity).despawn();
         }
     }
     params.bank.amount += collected;
+}
+
+fn point_segment_distance_squared(point: Vec2, start: Vec2, end: Vec2) -> f32 {
+    let segment = end - start;
+    let length_squared = segment.length_squared();
+    if length_squared <= f32::EPSILON {
+        return point.distance_squared(start);
+    }
+    let t = ((point - start).dot(segment) / length_squared).clamp(0.0, 1.0);
+    point.distance_squared(start + segment * t)
 }
 
 /// 太阳拾取物动画：上下浮动。名牌需要保持水平，因此不旋转整个实体。
